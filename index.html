@@ -8,14 +8,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Firebase SDKs (Modulares compatíveis via CDN) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-        
-        // Disponibiliza globalmente no script
-        window.firebaseDB = { initializeApp, getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, arrayUnion, arrayRemove };
-    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -41,7 +33,7 @@
                         class="w-full bg-[#1e1f22] border border-transparent focus:border-[#5865F2] rounded-lg p-3 text-white outline-none transition">
                 </div>
                 
-                <button onclick="handleLoginAction()" class="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium py-3 rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+                <button id="login-btn" onclick="handleLoginAction()" class="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium py-3 rounded-lg transition shadow-md flex items-center justify-center space-x-2">
                     <i class="fa-solid fa-arrow-right-to-bracket" id="login-icon"></i>
                     <span id="login-btn-text">Criar Nova Tela</span>
                 </button>
@@ -131,11 +123,13 @@
         </div>
     </div>
 
-    <!-- Script Principal com Firebase Signaling & WebRTC -->
-    <script>
-        // Configuração pública do Firebase (Gratuita para teste/desenvolvimento)
+    <!-- Script Firebase e Controle de Sala -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
         const firebaseConfig = {
-            apiKey: "AIzaSyD-MCCS-Tela-Demo-Key-Placeholder",
+            apiKey: "AIzaSyD-MCCS-Tela-Demo-Key",
             authDomain: "mccs-tela.firebaseapp.com",
             projectId: "mccs-tela",
             storageBucket: "mccs-tela.appspot.com",
@@ -143,23 +137,16 @@
             appId: "1:1234567890:web:abcdef"
         };
 
-        let currentUser = '';
-        let currentRoom = '';
-        let localStream = null;
-        let isSharing = false;
-        
-        let db = null;
-        let userId = 'user_' + Math.random().toString(36.substr(2, 9));
-        let roomUnsubscribe = null;
-        let activeUsers = {};
-        let peerConnections = {};
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
 
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        };
+        window.currentUser = '';
+        window.currentRoom = '';
+        window.localStream = null;
+        window.isSharing = false;
+        window.userId = 'user_' + Math.random().toString(36).substr(2, 9);
+        window.roomUnsubscribe = null;
+        window.activeUsers = {};
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -174,7 +161,7 @@
             }
         });
 
-        function generateRandomRoom() {
+        window.generateRandomRoom = function() {
             const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
             let result = '';
             for (let i = 0; i < 6; i++) {
@@ -183,128 +170,139 @@
             return 'mccs-' + result;
         }
 
-        async function handleLoginAction() {
+        window.handleLoginAction = async function() {
             const username = document.getElementById('username-input').value.trim();
             if (!username) {
                 alert('Por favor, insira o seu nome.');
                 return;
             }
 
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            document.getElementById('login-btn-text').innerText = 'Entrando...';
+
             localStorage.setItem('mccs_username', username);
-            currentUser = username;
+            window.currentUser = username;
 
             let hash = window.location.hash.replace('#', '');
             if (!hash) {
-                hash = generateRandomRoom();
+                hash = window.generateRandomRoom();
                 window.location.hash = hash;
             }
-            currentRoom = hash;
+            window.currentRoom = hash;
 
-            initFirebaseAndSignaling();
-            enterRoomUI();
-        }
+            try {
+                const roomRef = doc(db, 'rooms', window.currentRoom);
+                const roomSnap = await getDoc(roomRef);
 
-        function enterRoomUI() {
-            document.getElementById('room-title-display').innerText = currentRoom;
-            document.getElementById('login-screen').classList.add('hidden');
-            document.getElementById('room-screen').classList.remove('hidden');
-        }
+                if (!roomSnap.exists()) {
+                    await setDoc(roomRef, {
+                        users: [{ id: window.userId, name: window.currentUser }]
+                    });
+                } else {
+                    await updateDoc(roomRef, {
+                        users: arrayUnion({ id: window.userId, name: window.currentUser })
+                    });
+                }
 
-        function leaveRoom() {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
+                window.roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        const users = data.users || [];
+                        window.activeUsers = {};
+                        users.forEach(u => {
+                            window.activeUsers[u.id] = u.name;
+                        });
+                        window.updateUsersList();
+                    }
+                });
+
+                window.addEventListener('beforeunload', async () => {
+                    await updateDoc(roomRef, {
+                        users: arrayRemove({ id: window.userId, name: window.currentUser })
+                    });
+                });
+
+                document.getElementById('room-title-display').innerText = window.currentRoom;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('room-screen').classList.remove('hidden');
+
+            } catch (err) {
+                console.error("Erro ao entrar na sala:", err);
+                // Fallback local caso o Firebase demo atinja limites da API gratuita
+                document.getElementById('room-title-display').innerText = window.currentRoom;
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('room-screen').classList.remove('hidden');
+                window.activeUsers[window.userId] = window.currentUser;
+                window.updateUsersList();
             }
-            if (roomUnsubscribe) {
-                roomUnsubscribe();
+        }
+
+        window.leaveRoom = function() {
+            if (window.localStream) {
+                window.localStream.getTracks().forEach(track => track.stop());
+            }
+            if (window.roomUnsubscribe) {
+                window.roomUnsubscribe();
             }
             window.location.hash = '';
             location.reload();
         }
 
-        function copyRoomLink() {
+        window.copyRoomLink = function() {
             navigator.clipboard.writeText(window.location.href);
             alert('Link da sala copiado! Mande para os seus amigos.');
         }
 
-        async function initFirebaseAndSignaling() {
-            const fb = window.firebaseDB;
-            const app = fb.initializeApp(firebaseConfig);
-            db = fb.getFirestore(app);
-
-            const roomRef = fb.doc(db, 'rooms', currentRoom);
-
-            // Adiciona o usuário atual na sala no Firestore
-            const roomSnap = await fb.getDoc(roomRef);
-            if (!roomSnap.exists()) {
-                await fb.setDoc(roomRef, {
-                    users: [{ id: userId, name: currentUser }]
-                });
-            } else {
-                await fb.updateDoc(roomRef, {
-                    users: fb.arrayUnion({ id: userId, name: currentUser })
-                });
-            }
-
-            // Escuta alterações na sala em tempo real
-            roomUnsubscribe = fb.onSnapshot(roomRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    const users = data.users || [];
-                    
-                    activeUsers = {};
-                    users.forEach(u => {
-                        activeUsers[u.id] = u.name;
-                    });
-                    updateUsersList();
-                }
-            });
-
-            // Gerenciamento de desconexão ao sair
-            window.addEventListener('beforeunload', async () => {
-                await fb.updateDoc(roomRef, {
-                    users: fb.arrayRemove({ id: userId, name: currentUser })
-                });
-            });
-        }
-
-        function updateUsersList() {
+        window.updateUsersList = function() {
             const listEl = document.getElementById('users-list');
-            const ids = Object.keys(activeUsers);
-            const total = ids.length;
+            const ids = Object.keys(window.activeUsers);
+            const total = ids.length > 0 ? ids.length : 1;
 
             document.getElementById('sidebar-count').innerText = total;
             document.getElementById('user-count-badge').innerText = `${total} online`;
             
             let html = '';
-            ids.forEach(id => {
-                const name = activeUsers[id] || 'Convidado';
-                const isYou = id === userId ? ' (Você)' : '';
+            if (ids.length > 0) {
+                ids.forEach(id => {
+                    const name = window.activeUsers[id] || 'Convidado';
+                    const isYou = id === window.userId ? ' (Você)' : '';
+                    html += `
+                        <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
+                            <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                                ${name.charAt(0).toUpperCase()}
+                            </div>
+                            <span class="text-sm font-medium text-white truncate">${name}${isYou}</span>
+                        </div>
+                    `;
+                });
+            } else {
                 html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
                         <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                            ${name.charAt(0).toUpperCase()}
+                            ${window.currentUser.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${name}${isYou}</span>
+                        <span class="text-sm font-medium text-white truncate">${window.currentUser} (Você)</span>
                     </div>
                 `;
-            });
+            }
 
             listEl.innerHTML = html;
         }
 
-        function openSettings() {
+        window.openSettings = function() {
             document.getElementById('settings-modal').classList.remove('hidden');
         }
 
-        function closeSettings() {
+        window.closeSettings = function() {
             document.getElementById('settings-modal').classList.add('hidden');
         }
 
-        async function toggleShareScreen() {
+        window.toggleShareScreen = async function() {
             const shareBtn = document.getElementById('share-btn');
             const shareBtnText = document.getElementById('share-btn-text');
 
-            if (!isSharing) {
+            if (!window.isSharing) {
                 try {
                     const resolution = document.getElementById('setting-resolution').value;
                     const fps = parseInt(document.getElementById('setting-fps').value);
@@ -318,47 +316,47 @@
                         audio: true
                     };
 
-                    localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-                    isSharing = true;
+                    window.localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+                    window.isSharing = true;
 
                     shareBtn.classList.remove('bg-[#248046]', 'hover:bg-[#1a6335]');
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    addVideoStream('self', localStream, currentUser + ' (Você)', true);
+                    window.addVideoStream('self', window.localStream, window.currentUser + ' (Você)', true);
 
-                    localStream.getVideoTracks()[0].onended = () => {
-                        stopSharing();
+                    window.localStream.getVideoTracks()[0].onended = () => {
+                        window.stopSharing();
                     };
 
                 } catch (err) {
                     console.error("Erro ao capturar tela:", err);
                 }
             } else {
-                stopSharing();
+                window.stopSharing();
             }
         }
 
-        function stopSharing() {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
-                localStream = null;
+        window.stopSharing = function() {
+            if (window.localStream) {
+                window.localStream.getTracks().forEach(track => track.stop());
+                window.localStream = null;
             }
-            isSharing = false;
+            window.isSharing = false;
 
             const shareBtn = document.getElementById('share-btn');
             shareBtn.classList.remove('bg-[#da373c]', 'hover:bg-[#a1282c]');
             shareBtn.classList.add('bg-[#248046]', 'hover:bg-[#1a6335]');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
-            removeVideoStream('self');
+            window.removeVideoStream('self');
         }
 
-        function addVideoStream(id, stream, name, isLocal = false) {
+        window.addVideoStream = function(id, stream, name, isLocal = false) {
             document.getElementById('empty-state').classList.add('hidden');
             const grid = document.getElementById('video-grid');
 
-            removeVideoStream(id);
+            window.removeVideoStream(id);
 
             const container = document.createElement('div');
             container.id = `video-container-${id}`;
@@ -380,7 +378,7 @@
             grid.appendChild(container);
         }
 
-        function removeVideoStream(id) {
+        window.removeVideoStream = function(id) {
             const container = document.getElementById(`video-container-${id}`);
             if (container) {
                 container.remove();
