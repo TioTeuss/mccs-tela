@@ -1,8 +1,3 @@
-Com essa adição, a sala vai ficar perfeita! Adicionei um **botão de volume** ao lado do botão de tela cheia. Assim, quem estiver assistindo pode mutar ou desmutar o som da transmissão a qualquer momento (o botão só aparece para quem está assistindo, afinal a sua própria tela já não reproduz o seu áudio de volta para não dar eco).
-
-Aqui está o código completo do `index.html` atualizado com a função de mutar o áudio, mantendo os macacos, o tema vermelho e preto e a centralização:
-
-```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -88,7 +83,7 @@ Aqui está o código completo do `index.html` atualizado com a função de mutar
             <!-- Video Grid Area (Centralizado) -->
             <div class="flex-1 p-4 flex flex-wrap gap-4 items-center justify-center content-center bg-[#050505] overflow-y-auto" id="video-grid">
                 <!-- Estado Vazio / Tela Inicial -->
-                <div id="empty-state" class="flex flex-col items-center justify-center text-center text-gray-500 w-full">
+                <div id="empty-state" class="flex flex-col items-center justify-center text-center text-gray-500 w-full h-full">
                     <div class="w-24 h-24 rounded-full bg-red-900/10 border border-red-900/30 flex items-center justify-center text-5xl mb-4 text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.1)]">
                         🙈
                     </div>
@@ -154,7 +149,8 @@ Aqui está o código completo do `index.html` atualizado com a função de mutar
         ];
 
         window.addEventListener('DOMContentLoaded', () => {
-            const savedName = localStorage.getItem('mccs_username');
+            // Mudei a chave do storage para esquecer o nome "Teus" antigo
+            const savedName = localStorage.getItem('mccs_primata_name');
             if (savedName) {
                 document.getElementById('username-input').value = savedName;
             } else {
@@ -189,7 +185,7 @@ Aqui está o código completo do `index.html` atualizado com a função de mutar
             btn.disabled = true;
             document.getElementById('login-btn-text').innerText = 'Conectando...';
 
-            localStorage.setItem('mccs_username', username);
+            localStorage.setItem('mccs_primata_name', username);
             currentUser = username;
 
             let hash = window.location.hash.replace('#', '');
@@ -561,7 +557,6 @@ Aqui está o código completo do `index.html` atualizado com a função de mutar
             const label = document.createElement('div');
             label.className = 'absolute bottom-3 left-3 right-3 flex justify-between items-center bg-black/80 border border-red-900/50 backdrop-blur-md px-4 py-2 rounded-lg text-xs font-medium text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10';
             
-            // Renderiza o botão de volume apenas se NÃO for a própria transmissão (isLocal = false)
             const volumeBtnHTML = !isLocal ? `
                 <button onclick="toggleAudio('${containerId}')" class="bg-[#111] hover:bg-[#222] border border-red-900/50 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.2)]" title="Ligar/Desligar Som">
                     <i id="audio-icon-${containerId}" class="fa-solid fa-volume-high"></i>
@@ -599,5 +594,3 @@ Aqui está o código completo do `index.html` atualizado com a função de mutar
     </script>
 </body>
 </html>
-
-```
