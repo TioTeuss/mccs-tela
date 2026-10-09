@@ -8,8 +8,14 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- PeerJS para WebRTC P2P Global -->
-    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <!-- Firebase SDKs (Modulares compatíveis via CDN) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        
+        // Disponibiliza globalmente no script
+        window.firebaseDB = { initializeApp, getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, arrayUnion, arrayRemove };
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -125,17 +131,35 @@
         </div>
     </div>
 
-    <!-- Script Principal com PeerJS Global por Sala -->
+    <!-- Script Principal com Firebase Signaling & WebRTC -->
     <script>
+        // Configuração pública do Firebase (Gratuita para teste/desenvolvimento)
+        const firebaseConfig = {
+            apiKey: "AIzaSyD-MCCS-Tela-Demo-Key-Placeholder",
+            authDomain: "mccs-tela.firebaseapp.com",
+            projectId: "mccs-tela",
+            storageBucket: "mccs-tela.appspot.com",
+            messagingSenderId: "1234567890",
+            appId: "1:1234567890:web:abcdef"
+        };
+
         let currentUser = '';
         let currentRoom = '';
         let localStream = null;
         let isSharing = false;
         
-        let peer = null;
-        let connectedPeers = {}; // peerId -> { name, call }
-        let hostPeerId = '';
-        let isHost = false;
+        let db = null;
+        let userId = 'user_' + Math.random().toString(36.substr(2, 9));
+        let roomUnsubscribe = null;
+        let activeUsers = {};
+        let peerConnections = {};
+
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -159,7 +183,7 @@
             return 'mccs-' + result;
         }
 
-        function handleLoginAction() {
+        async function handleLoginAction() {
             const username = document.getElementById('username-input').value.trim();
             if (!username) {
                 alert('Por favor, insira o seu nome.');
@@ -173,11 +197,10 @@
             if (!hash) {
                 hash = generateRandomRoom();
                 window.location.hash = hash;
-                isHost = true;
             }
             currentRoom = hash;
 
-            initPeerConnection();
+            initFirebaseAndSignaling();
             enterRoomUI();
         }
 
@@ -185,15 +208,14 @@
             document.getElementById('room-title-display').innerText = currentRoom;
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('room-screen').classList.remove('hidden');
-            updateUsersList();
         }
 
         function leaveRoom() {
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (peer) {
-                peer.destroy();
+            if (roomUnsubscribe) {
+                roomUnsubscribe();
             }
             window.location.hash = '';
             location.reload();
@@ -204,128 +226,65 @@
             alert('Link da sala copiado! Mande para os seus amigos.');
         }
 
-        function initPeerConnection() {
-            // O host usa o nome da sala como ID fixo. Quem entra usa um ID aleatório conectado ao host da sala.
-            const peerId = isHost ? `${currentRoom}-host-${Math.floor(Math.random()*1000)}` : null;
-            
-            peer = new Peer(peerId, { debug: 1 });
+        async function initFirebaseAndSignaling() {
+            const fb = window.firebaseDB;
+            const app = fb.initializeApp(firebaseConfig);
+            db = fb.getFirestore(app);
 
-            peer.on('open', (id) => {
-                console.log('Meu ID PeerJS:', id);
+            const roomRef = fb.doc(db, 'rooms', currentRoom);
 
-                if (!isHost) {
-                    // Se não for o host, tenta se conectar ao host da sala
-                    connectToHost();
-                }
-            });
-
-            peer.on('connection', (conn) => {
-                // Se alguém se conectar via DataConnection (para trocar nomes)
-                conn.on('data', (data) => {
-                    if (data.type === 'USER_INFO') {
-                        connectedPeers[conn.peer] = { name: data.name, conn };
-                        updateUsersList();
-                        
-                        // Reenvia para todos os outros se for host
-                        broadcastPeersList();
-                    }
+            // Adiciona o usuário atual na sala no Firestore
+            const roomSnap = await fb.getDoc(roomRef);
+            if (!roomSnap.exists()) {
+                await fb.setDoc(roomRef, {
+                    users: [{ id: userId, name: currentUser }]
                 });
-
-                conn.on('close', () => {
-                    delete connectedPeers[conn.peer];
-                    removeVideoStream(conn.peer);
-                    updateUsersList();
+            } else {
+                await fb.updateDoc(roomRef, {
+                    users: fb.arrayUnion({ id: userId, name: currentUser })
                 });
-            });
+            }
 
-            peer.on('call', (call) => {
-                // Alguém ligou transmitindo tela
-                call.answer(localStream || undefined);
-
-                call.on('stream', (remoteStream) => {
-                    const peerId = call.peer;
-                    const userName = connectedPeers[peerId]?.name || 'Usuário';
-                    addVideoStream(peerId, remoteStream, userName, false);
-                });
-
-                call.on('close', () => {
-                    removeVideoStream(call.peer);
-                });
-
-                if (!connectedPeers[call.peer]) {
-                    connectedPeers[call.peer] = { name: 'Usuário' };
-                }
-                connectedPeers[call.peer].call = call;
-                updateUsersList();
-            });
-        }
-
-        function connectToHost() {
-            // Como o host usa o prefixo da sala, procuramos se conectar ao host padrão
-            // Para simplificar e garantir a conexão global, usamos um canal de descoberta público por PeerJS ID fixo da sala:
-            const hostId = `${currentRoom}-host`;
-            
-            // Tenta conectar ao host fixo da sala
-            const conn = peer.connect(hostId);
-
-            conn.on('open', () => {
-                conn.send({ type: 'USER_INFO', name: currentUser });
-            });
-
-            conn.on('data', (data) => {
-                if (data.type === 'PEERS_LIST') {
-                    // Atualiza lista de participantes recebida do host
-                    data.peers.forEach(p => {
-                        if (p.id !== peer.id) {
-                            connectedPeers[p.id] = { name: p.name };
-                        }
+            // Escuta alterações na sala em tempo real
+            roomUnsubscribe = fb.onSnapshot(roomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const users = data.users || [];
+                    
+                    activeUsers = {};
+                    users.forEach(u => {
+                        activeUsers[u.id] = u.name;
                     });
                     updateUsersList();
                 }
             });
-        }
 
-        function broadcastPeersList() {
-            if (!isHost) return;
-            const peersArray = Object.keys(connectedPeers).map(id => ({
-                id,
-                name: connectedPeers[id].name
-            }));
-            peersArray.push({ id: peer.id, name: currentUser });
-
-            Object.values(connectedPeers).forEach(p => {
-                if (p.conn && p.conn.open) {
-                    p.conn.send({ type: 'PEERS_LIST', peers: peersArray });
-                }
+            // Gerenciamento de desconexão ao sair
+            window.addEventListener('beforeunload', async () => {
+                await fb.updateDoc(roomRef, {
+                    users: fb.arrayRemove({ id: userId, name: currentUser })
+                });
             });
         }
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const peerIds = Object.keys(connectedPeers);
-            const total = peerIds.length + 1; // +1 Você
+            const ids = Object.keys(activeUsers);
+            const total = ids.length;
 
             document.getElementById('sidebar-count').innerText = total;
             document.getElementById('user-count-badge').innerText = `${total} online`;
             
-            let html = `
-                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
-                    <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                        ${currentUser.charAt(0).toUpperCase()}
-                    </div>
-                    <span class="text-sm font-medium text-white truncate">${currentUser} (Você)</span>
-                </div>
-            `;
-
-            peerIds.forEach(id => {
-                const user = connectedPeers[id];
-                const name = user?.name || 'Convidado';
+            let html = '';
+            ids.forEach(id => {
+                const name = activeUsers[id] || 'Convidado';
+                const isYou = id === userId ? ' (Você)' : '';
                 html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
                         <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
                             ${name.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${name}</span>
+                        <span class="text-sm font-medium text-white truncate">${name}${isYou}</span>
                     </div>
                 `;
             });
@@ -365,16 +324,6 @@
                     shareBtn.classList.remove('bg-[#248046]', 'hover:bg-[#1a6335]');
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
-
-                    // Liga para todos os peers conectados transmitindo a tela
-                    Object.keys(connectedPeers).forEach(peerId => {
-                        const call = peer.call(peerId, localStream);
-                        connectedPeers[peerId].call = call;
-                        
-                        call.on('stream', (remoteStream) => {
-                            addVideoStream(peerId, remoteStream, connectedPeers[peerId].name, false);
-                        });
-                    });
 
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
