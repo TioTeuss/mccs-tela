@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- PeerJS para WebRTC P2P Estável -->
+    <!-- PeerJS para WebRTC P2P Global -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -125,7 +125,7 @@
         </div>
     </div>
 
-    <!-- Script Principal com PeerJS -->
+    <!-- Script Principal com PeerJS Global por Sala -->
     <script>
         let currentUser = '';
         let currentRoom = '';
@@ -133,8 +133,9 @@
         let isSharing = false;
         
         let peer = null;
-        let connectedPeers = {}; // id -> { name, call }
-        let myPeerId = '';
+        let connectedPeers = {}; // peerId -> { name, call }
+        let hostPeerId = '';
+        let isHost = false;
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -172,10 +173,11 @@
             if (!hash) {
                 hash = generateRandomRoom();
                 window.location.hash = hash;
+                isHost = true;
             }
             currentRoom = hash;
 
-            initPeerJS();
+            initPeerConnection();
             enterRoomUI();
         }
 
@@ -202,73 +204,100 @@
             alert('Link da sala copiado! Mande para os seus amigos.');
         }
 
-        function initPeerJS() {
-            // Usa o ID da sala combinada ou prefixo limpo para encontrar outros na mesma sala
-            // Como PeerJS usa IDs globais, criamos um ID único baseado no nome da sala
-            peer = new Peer(null, {
-                debug: 2
-            });
+        function initPeerConnection() {
+            // O host usa o nome da sala como ID fixo. Quem entra usa um ID aleatório conectado ao host da sala.
+            const peerId = isHost ? `${currentRoom}-host-${Math.floor(Math.random()*1000)}` : null;
+            
+            peer = new Peer(peerId, { debug: 1 });
 
             peer.on('open', (id) => {
-                myPeerId = id;
-                console.log('Conectado ao PeerJS com ID:', id);
+                console.log('Meu ID PeerJS:', id);
 
-                // Se houver outras pessoas na sala (simulamos salvando num canal ou tentando conectar no host da sala)
-                // Para simplificar salas P2P puras sem backend: o primeiro da sala vira o host ou todos se conectam via broadcast de ID.
-                // Vamos usar localStorage temporário da sala para descobrir peers ativos na mesma aba/sessão:
-                registerInRoom();
+                if (!isHost) {
+                    // Se não for o host, tenta se conectar ao host da sala
+                    connectToHost();
+                }
+            });
+
+            peer.on('connection', (conn) => {
+                // Se alguém se conectar via DataConnection (para trocar nomes)
+                conn.on('data', (data) => {
+                    if (data.type === 'USER_INFO') {
+                        connectedPeers[conn.peer] = { name: data.name, conn };
+                        updateUsersList();
+                        
+                        // Reenvia para todos os outros se for host
+                        broadcastPeersList();
+                    }
+                });
+
+                conn.on('close', () => {
+                    delete connectedPeers[conn.peer];
+                    removeVideoStream(conn.peer);
+                    updateUsersList();
+                });
             });
 
             peer.on('call', (call) => {
-                // Alguém ligou (está transmitindo tela para nós)
+                // Alguém ligou transmitindo tela
                 call.answer(localStream || undefined);
-                
+
                 call.on('stream', (remoteStream) => {
                     const peerId = call.peer;
-                    const peerName = connectedPeers[peerId]?.name || 'Usuário';
-                    addVideoStream(peerId, remoteStream, peerName, false);
+                    const userName = connectedPeers[peerId]?.name || 'Usuário';
+                    addVideoStream(peerId, remoteStream, userName, false);
                 });
 
                 call.on('close', () => {
                     removeVideoStream(call.peer);
                 });
 
-                connectedPeers[call.peer] = { call, name: 'Usuário' };
+                if (!connectedPeers[call.peer]) {
+                    connectedPeers[call.peer] = { name: 'Usuário' };
+                }
+                connectedPeers[call.peer].call = call;
                 updateUsersList();
             });
         }
 
-        function registerInRoom() {
-            // Mecanismo simples de anúncio de presença via BroadcastChannel (funciona entre abas e mesma rede/navegador)
-            const channel = new BroadcastChannel('mccs_room_' + currentRoom);
+        function connectToHost() {
+            // Como o host usa o prefixo da sala, procuramos se conectar ao host padrão
+            // Para simplificar e garantir a conexão global, usamos um canal de descoberta público por PeerJS ID fixo da sala:
+            const hostId = `${currentRoom}-host`;
             
-            channel.postMessage({ type: 'JOIN', peerId: myPeerId, name: currentUser });
+            // Tenta conectar ao host fixo da sala
+            const conn = peer.connect(hostId);
 
-            channel.onmessage = (event) => {
-                const data = event.data;
-                if (data.type === 'JOIN' && data.peerId !== myPeerId) {
-                    connectedPeers[data.peerId] = { name: data.name };
-                    updateUsersList();
+            conn.on('open', () => {
+                conn.send({ type: 'USER_INFO', name: currentUser });
+            });
 
-                    // Se nós estivermos transmitindo tela, liga para o novo peer
-                    if (isSharing && localStream) {
-                        const call = peer.call(data.peerId, localStream);
-                        connectedPeers[data.peerId].call = call;
-
-                        call.on('stream', (remoteStream) => {
-                            addVideoStream(data.peerId, remoteStream, data.name, false);
-                        });
-                    }
-
-                    // Responde com nosso nome
-                    channel.postMessage({ type: 'HERE', peerId: myPeerId, name: currentUser });
-                }
-
-                if (data.type === 'HERE' && data.peerId !== myPeerId) {
-                    connectedPeers[data.peerId] = { name: data.name };
+            conn.on('data', (data) => {
+                if (data.type === 'PEERS_LIST') {
+                    // Atualiza lista de participantes recebida do host
+                    data.peers.forEach(p => {
+                        if (p.id !== peer.id) {
+                            connectedPeers[p.id] = { name: p.name };
+                        }
+                    });
                     updateUsersList();
                 }
-            };
+            });
+        }
+
+        function broadcastPeersList() {
+            if (!isHost) return;
+            const peersArray = Object.keys(connectedPeers).map(id => ({
+                id,
+                name: connectedPeers[id].name
+            }));
+            peersArray.push({ id: peer.id, name: currentUser });
+
+            Object.values(connectedPeers).forEach(p => {
+                if (p.conn && p.conn.open) {
+                    p.conn.send({ type: 'PEERS_LIST', peers: peersArray });
+                }
+            });
         }
 
         function updateUsersList() {
