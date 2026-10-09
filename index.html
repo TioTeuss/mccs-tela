@@ -4,16 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MCCS Tela 🦍</title>
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Servidor Global MQTT para Sinalização WebRTC -->
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
-        
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0a0a0a; }
         ::-webkit-scrollbar-thumb { background: #dc2626; border-radius: 4px; }
@@ -22,11 +18,9 @@
 </head>
 <body class="bg-black text-gray-200 h-screen flex flex-col overflow-hidden">
 
-    <!-- TELA 1: LOGIN / IDENTIFICAÇÃO -->
     <div id="login-screen" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
         <div class="bg-[#0a0a0a] w-full max-w-md p-8 rounded-2xl shadow-2xl border-2 border-red-600 relative overflow-hidden">
             <div class="absolute -top-10 -right-10 text-9xl opacity-5">🦍</div>
-
             <div class="text-center mb-6 relative z-10">
                 <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-600 text-white text-3xl mb-3 shadow-[0_0_15px_rgba(220,38,38,0.5)]">
                     🐒
@@ -34,14 +28,11 @@
                 <h1 class="text-2xl font-bold text-white uppercase tracking-wider">MCCS Tela</h1>
                 <p class="text-sm text-red-400 mt-1">Transmissão P2P • O Bando tá on</p>
             </div>
-            
             <div class="space-y-4 relative z-10">
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-2">Seu Nome de Primata</label>
-                    <input type="text" id="username-input" placeholder="Ex: Babuíno Careca" 
-                        class="w-full bg-[#111] border border-red-900/50 focus:border-red-500 rounded-lg p-3 text-white outline-none transition placeholder-gray-600">
+                    <input type="text" id="username-input" placeholder="Ex: Babuíno Careca" class="w-full bg-[#111] border border-red-900/50 focus:border-red-500 rounded-lg p-3 text-white outline-none transition placeholder-gray-600">
                 </div>
-                
                 <button id="login-btn" onclick="handleLoginAction()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition shadow-[0_0_10px_rgba(220,38,38,0.3)] hover:shadow-[0_0_20px_rgba(220,38,38,0.6)] flex items-center justify-center space-x-2 uppercase tracking-wide">
                     <i class="fa-solid fa-arrow-right-to-bracket" id="login-icon"></i>
                     <span id="login-btn-text">Entrar na Selva</span>
@@ -50,16 +41,13 @@
         </div>
     </div>
 
-    <!-- TELA 2: SALA DE TRANSMISSÃO -->
-    <div id="room-screen" class="hidden flex-1 flex h-full">
-        <!-- Main Content (Vídeos) -->
-        <div class="flex-1 flex flex-col bg-[#050505] relative">
-            <!-- Topbar -->
-            <div class="h-14 border-b border-red-900/40 px-4 flex items-center justify-between bg-black">
+    <div id="room-screen" class="hidden flex-1 flex h-full overflow-hidden">
+        <div class="flex-1 flex flex-col bg-[#050505] relative h-full">
+            <div class="h-14 border-b border-red-900/40 px-4 flex items-center justify-between bg-black shrink-0">
                 <div class="flex items-center space-x-3">
                     <span class="text-xl">🦧</span>
                     <span id="room-title-display" class="font-bold text-red-500 tracking-wider uppercase">sala</span>
-                    <button onclick="copyRoomLink()" class="bg-[#111] hover:bg-[#222] border border-red-900/30 text-gray-400 hover:text-red-400 text-xs px-2.5 py-1 rounded transition flex items-center space-x-1.5" title="Copiar link da sala">
+                    <button onclick="copyRoomLink()" class="bg-[#111] hover:bg-[#222] border border-red-900/30 text-gray-400 hover:text-red-400 text-xs px-2.5 py-1 rounded transition flex items-center space-x-1.5">
                         <i class="fa-solid fa-link"></i>
                         <span>Copiar Link</span>
                     </button>
@@ -80,10 +68,8 @@
                 </div>
             </div>
 
-            <!-- Video Grid Area (Centralizado) -->
-            <div class="flex-1 p-4 flex flex-wrap gap-4 items-center justify-center content-center bg-[#050505] overflow-y-auto" id="video-grid">
-                <!-- Estado Vazio / Tela Inicial -->
-                <div id="empty-state" class="flex flex-col items-center justify-center text-center text-gray-500 w-full h-full">
+            <div class="flex-1 p-4 relative flex items-center justify-center bg-[#050505] overflow-hidden" id="video-grid">
+                <div id="empty-state" class="absolute inset-0 flex flex-col items-center justify-center text-center text-gray-500 z-0">
                     <div class="w-24 h-24 rounded-full bg-red-900/10 border border-red-900/30 flex items-center justify-center text-5xl mb-4 text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.1)]">
                         🙈
                     </div>
@@ -93,22 +79,18 @@
             </div>
         </div>
 
-        <!-- Sidebar (Usuários na Sala) -->
-        <div class="w-60 bg-[#0a0a0a] border-l border-red-900/40 flex flex-col">
+        <div class="w-60 bg-[#0a0a0a] border-l border-red-900/40 flex flex-col shrink-0 h-full">
             <div class="p-4 border-b border-red-900/40 bg-black">
                 <h3 class="text-xs font-bold uppercase text-red-500 tracking-widest">No Bando — <span id="sidebar-count">1</span></h3>
             </div>
             <div id="users-list" class="p-2 space-y-1 overflow-y-auto flex-1">
-                <!-- Lista injetada via JS -->
             </div>
         </div>
     </div>
 
-    <!-- MODAL DE CONFIGURAÇÕES DE VÍDEO -->
     <div id="settings-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-[#0a0a0a] w-full max-w-sm rounded-2xl p-6 border border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.2)]">
             <h3 class="text-lg font-bold text-white mb-4 uppercase tracking-wide">Configurações 🦍</h3>
-            
             <div class="space-y-4">
                 <div>
                     <label class="block text-xs font-bold uppercase text-gray-400 mb-2">Resolução</label>
@@ -125,7 +107,6 @@
                     </select>
                 </div>
             </div>
-
             <div class="mt-6 flex justify-end space-x-2">
                 <button onclick="closeSettings()" class="bg-[#111] hover:bg-red-900 border border-red-900/30 text-white px-5 py-2 rounded-lg text-sm font-bold uppercase transition">Fechar</button>
             </div>
@@ -143,13 +124,9 @@
         let myId = 'usr_' + Math.random().toString(36).substr(2, 9);
         let peers = {}; 
 
-        const monkeyNames = [
-            'Babuíno', 'Gorila', 'Chimpanzé', 'Orangotango', 'Macaco Prego', 
-            'Sagui', 'Bugio', 'Macaco-aranha', 'Mico-leão', 'Mandril'
-        ];
+        const monkeyNames = ['Babuíno', 'Gorila', 'Chimpanzé', 'Orangotango', 'Macaco Prego', 'Sagui', 'Bugio', 'Macaco-aranha', 'Mico-leão', 'Mandril'];
 
         window.addEventListener('DOMContentLoaded', () => {
-            // Mudei a chave do storage para esquecer o nome "Teus" antigo
             const savedName = localStorage.getItem('mccs_primata_name');
             if (savedName) {
                 document.getElementById('username-input').value = savedName;
@@ -203,7 +180,6 @@
 
             mqttClient.on('connect', () => {
                 const baseTopic = `mccstela/${currentRoom}`;
-                
                 mqttClient.subscribe(`${baseTopic}/#`);
                 mqttClient.publish(`${baseTopic}/join`, JSON.stringify({ id: myId, name: currentUser }));
 
@@ -225,9 +201,7 @@
 
                 if (topic === `${baseTopic}/join` && msg.id !== myId) {
                     createPeer(msg.id, msg.name, true);
-                    mqttClient.publish(`${baseTopic}/here`, JSON.stringify({ 
-                        id: myId, name: currentUser, target: msg.id 
-                    }));
+                    mqttClient.publish(`${baseTopic}/here`, JSON.stringify({ id: myId, name: currentUser, target: msg.id }));
                 }
 
                 if (topic === `${baseTopic}/here` && msg.target === myId) {
@@ -248,10 +222,7 @@
             if (peers[peerId]) return peers[peerId];
 
             const pc = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' }
-                ]
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
             });
 
             peers[peerId] = { pc, name: peerName, senders: [] };
@@ -427,7 +398,6 @@
             }
         }
 
-        // Nova Função: Mutar/Desmutar Som do Vídeo Remoto
         function toggleAudio(containerId) {
             const container = document.getElementById(containerId);
             if (!container) return;
@@ -435,7 +405,6 @@
             if (!video) return;
             
             const icon = document.getElementById(`audio-icon-${containerId}`);
-            
             video.muted = !video.muted;
             
             if (video.muted) {
@@ -521,7 +490,7 @@
             const containerId = `video-container-${id}`;
             const container = document.createElement('div');
             container.id = containerId;
-            container.className = 'group relative bg-black rounded-xl overflow-hidden shadow-[0_0_15px_rgba(220,38,38,0.15)] border border-red-900/40 aspect-video flex items-center justify-center w-full max-w-5xl transition-all duration-300';
+            container.className = 'relative bg-black rounded-xl overflow-hidden shadow-[0_0_15px_rgba(220,38,38,0.15)] border border-red-900/40 w-full h-full max-h-full flex items-center justify-center z-10';
 
             const video = document.createElement('video');
             video.playsInline = true;
@@ -533,7 +502,7 @@
                 video.autoplay = true;
             } else {
                 const watchOverlay = document.createElement('div');
-                watchOverlay.className = 'absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-20 backdrop-blur-sm transition-opacity duration-300';
+                watchOverlay.className = 'absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-30 backdrop-blur-sm transition-opacity duration-300';
                 watchOverlay.innerHTML = `
                     <div class="text-6xl mb-4 animate-pulse">🦍</div>
                     <p class="text-xl text-white font-bold mb-6 text-center px-4">Transmissão de <span class="text-red-500">${name}</span></p>
@@ -550,28 +519,27 @@
                     watchOverlay.style.opacity = '0';
                     setTimeout(() => watchOverlay.remove(), 300);
                 };
-                
                 container.appendChild(watchOverlay);
             }
 
             const label = document.createElement('div');
-            label.className = 'absolute bottom-3 left-3 right-3 flex justify-between items-center bg-black/80 border border-red-900/50 backdrop-blur-md px-4 py-2 rounded-lg text-xs font-medium text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10';
+            label.className = 'absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center space-x-6 bg-black/80 border border-red-900/50 backdrop-blur-md px-6 py-3 rounded-xl text-sm font-medium text-white z-20 shadow-lg';
             
             const volumeBtnHTML = !isLocal ? `
-                <button onclick="toggleAudio('${containerId}')" class="bg-[#111] hover:bg-[#222] border border-red-900/50 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.2)]" title="Ligar/Desligar Som">
-                    <i id="audio-icon-${containerId}" class="fa-solid fa-volume-high"></i>
+                <button onclick="toggleAudio('${containerId}')" class="bg-[#111] hover:bg-[#222] border border-red-900/50 text-white w-10 h-10 rounded-lg flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.2)]" title="Ligar/Desligar Som">
+                    <i id="audio-icon-${containerId}" class="fa-solid fa-volume-high text-lg"></i>
                 </button>
             ` : '';
 
             label.innerHTML = `
                 <div class="flex items-center space-x-2">
-                    <i class="fa-solid fa-desktop text-red-500"></i>
-                    <span class="font-bold tracking-wide">${name}</span>
+                    <i class="fa-solid fa-desktop text-red-500 text-lg"></i>
+                    <span class="font-bold tracking-wide text-base">${name}</span>
                 </div>
-                <div class="flex items-center space-x-2">
+                <div class="flex items-center space-x-3">
                     ${volumeBtnHTML}
-                    <button onclick="toggleFullScreen('${containerId}')" class="bg-red-600 hover:bg-red-500 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.4)]" title="Tela Cheia">
-                        <i class="fa-solid fa-expand"></i>
+                    <button onclick="toggleFullScreen('${containerId}')" class="bg-red-600 hover:bg-red-500 text-white w-10 h-10 rounded-lg flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.4)]" title="Tela Cheia">
+                        <i class="fa-solid fa-expand text-lg"></i>
                     </button>
                 </div>
             `;
@@ -587,7 +555,7 @@
                 container.remove();
             }
             const grid = document.getElementById('video-grid');
-            if (grid.children.length <= 1) { 
+            if (grid.querySelectorAll('[id^="video-container-"]').length === 0) {
                 document.getElementById('empty-state').classList.remove('hidden');
             }
         }
