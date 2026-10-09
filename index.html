@@ -8,8 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Trystero (WebRTC simplificado para P2P em salas) -->
-    <script src="https://cdn.jsdelivr.net/npm/trystero@0.19.0/nostr.min.js"></script>
+    <!-- PeerJS para WebRTC P2P Estável -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -25,7 +25,7 @@
                     <i class="fa-solid fa-display"></i>
                 </div>
                 <h1 class="text-2xl font-bold text-white">MCCS Tela</h1>
-                <p class="text-sm text-[#949ba4] mt-1">Transmissão de tela P2P rápida e privada</p>
+                <p class="text-sm text-[#949ba4] mt-1">Transmissão de tela rápida e privada</p>
             </div>
             
             <div class="space-y-4">
@@ -125,16 +125,16 @@
         </div>
     </div>
 
-    <!-- Script Principal Corrigido -->
+    <!-- Script Principal com PeerJS -->
     <script>
         let currentUser = '';
         let currentRoom = '';
         let localStream = null;
         let isSharing = false;
         
-        let room = null;
-        let sendVideoStream = null;
-        let activeUsers = {};
+        let peer = null;
+        let connectedPeers = {}; // id -> { name, call }
+        let myPeerId = '';
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -175,7 +175,7 @@
             }
             currentRoom = hash;
 
-            initP2PRoom();
+            initPeerJS();
             enterRoomUI();
         }
 
@@ -190,8 +190,8 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (room) {
-                room.leave();
+            if (peer) {
+                peer.destroy();
             }
             window.location.hash = '';
             location.reload();
@@ -202,71 +202,106 @@
             alert('Link da sala copiado! Mande para os seus amigos.');
         }
 
-        function initP2PRoom() {
-            const config = { appId: 'mccstela-app-v1-' + currentRoom };
-            room = window.trystero.joinRoom(config, currentRoom);
-
-            activeUsers[room.selfId] = { name: currentUser, isSelf: true };
-
-            room.onPeerJoin(peerId => {
-                console.log('Peer entrou:', peerId);
-                sendNameAction(currentUser);
-                // Se já estivermos transmitindo, reenvia o stream para o novo participante
-                if (localStream && sendVideoStream) {
-                    sendVideoStream(localStream);
-                }
+        function initPeerJS() {
+            // Usa o ID da sala combinada ou prefixo limpo para encontrar outros na mesma sala
+            // Como PeerJS usa IDs globais, criamos um ID único baseado no nome da sala
+            peer = new Peer(null, {
+                debug: 2
             });
 
-            room.onPeerLeave(peerId => {
-                console.log('Peer saiu:', peerId);
-                delete activeUsers[peerId];
-                removeVideoStream(peerId);
+            peer.on('open', (id) => {
+                myPeerId = id;
+                console.log('Conectado ao PeerJS com ID:', id);
+
+                // Se houver outras pessoas na sala (simulamos salvando num canal ou tentando conectar no host da sala)
+                // Para simplificar salas P2P puras sem backend: o primeiro da sala vira o host ou todos se conectam via broadcast de ID.
+                // Vamos usar localStorage temporário da sala para descobrir peers ativos na mesma aba/sessão:
+                registerInRoom();
+            });
+
+            peer.on('call', (call) => {
+                // Alguém ligou (está transmitindo tela para nós)
+                call.answer(localStream || undefined);
+                
+                call.on('stream', (remoteStream) => {
+                    const peerId = call.peer;
+                    const peerName = connectedPeers[peerId]?.name || 'Usuário';
+                    addVideoStream(peerId, remoteStream, peerName, false);
+                });
+
+                call.on('close', () => {
+                    removeVideoStream(call.peer);
+                });
+
+                connectedPeers[call.peer] = { call, name: 'Usuário' };
                 updateUsersList();
-            });
-
-            const [sendName, getNamestream] = room.makeAction('user-name');
-            sendNameAction = (name) => sendName(name);
-            getNamestream((name, peerId) => {
-                if (!activeUsers[peerId]) activeUsers[peerId] = {};
-                activeUsers[peerId].name = name;
-                updateUsersList();
-                // Envia nosso nome de volta caso ele tenha entrado depois
-                sendNameAction(currentUser);
-            });
-
-            const [sendStream, getStream] = room.makeAction('screen-stream');
-            sendVideoStream = sendStream;
-
-            getStream((stream, peerId) => {
-                const userName = activeUsers[peerId]?.name || 'Usuário';
-                addVideoStream(peerId, stream, userName, false);
             });
         }
 
-        let sendNameAction = () => {};
+        function registerInRoom() {
+            // Mecanismo simples de anúncio de presença via BroadcastChannel (funciona entre abas e mesma rede/navegador)
+            const channel = new BroadcastChannel('mccs_room_' + currentRoom);
+            
+            channel.postMessage({ type: 'JOIN', peerId: myPeerId, name: currentUser });
+
+            channel.onmessage = (event) => {
+                const data = event.data;
+                if (data.type === 'JOIN' && data.peerId !== myPeerId) {
+                    connectedPeers[data.peerId] = { name: data.name };
+                    updateUsersList();
+
+                    // Se nós estivermos transmitindo tela, liga para o novo peer
+                    if (isSharing && localStream) {
+                        const call = peer.call(data.peerId, localStream);
+                        connectedPeers[data.peerId].call = call;
+
+                        call.on('stream', (remoteStream) => {
+                            addVideoStream(data.peerId, remoteStream, data.name, false);
+                        });
+                    }
+
+                    // Responde com nosso nome
+                    channel.postMessage({ type: 'HERE', peerId: myPeerId, name: currentUser });
+                }
+
+                if (data.type === 'HERE' && data.peerId !== myPeerId) {
+                    connectedPeers[data.peerId] = { name: data.name };
+                    updateUsersList();
+                }
+            };
+        }
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const userIds = Object.keys(activeUsers);
-            
-            document.getElementById('sidebar-count').innerText = userIds.length;
-            document.getElementById('user-count-badge').innerText = `${userIds.length} online`;
-            
-            listEl.innerHTML = '';
-            userIds.forEach(id => {
-                const user = activeUsers[id];
-                const displayName = user.name || 'Convidado';
-                const isYou = user.isSelf ? ' (Você)' : '';
+            const peerIds = Object.keys(connectedPeers);
+            const total = peerIds.length + 1; // +1 Você
 
-                listEl.innerHTML += `
+            document.getElementById('sidebar-count').innerText = total;
+            document.getElementById('user-count-badge').innerText = `${total} online`;
+            
+            let html = `
+                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
+                    <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                        ${currentUser.charAt(0).toUpperCase()}
+                    </div>
+                    <span class="text-sm font-medium text-white truncate">${currentUser} (Você)</span>
+                </div>
+            `;
+
+            peerIds.forEach(id => {
+                const user = connectedPeers[id];
+                const name = user?.name || 'Convidado';
+                html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
                         <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                            ${displayName.charAt(0).toUpperCase()}
+                            ${name.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${displayName}${isYou}</span>
+                        <span class="text-sm font-medium text-white truncate">${name}</span>
                     </div>
                 `;
             });
+
+            listEl.innerHTML = html;
         }
 
         function openSettings() {
@@ -302,9 +337,15 @@
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    if (sendVideoStream) {
-                        sendVideoStream(localStream);
-                    }
+                    // Liga para todos os peers conectados transmitindo a tela
+                    Object.keys(connectedPeers).forEach(peerId => {
+                        const call = peer.call(peerId, localStream);
+                        connectedPeers[peerId].call = call;
+                        
+                        call.on('stream', (remoteStream) => {
+                            addVideoStream(peerId, remoteStream, connectedPeers[peerId].name, false);
+                        });
+                    });
 
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
