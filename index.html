@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Trystero para WebRTC P2P (via Torrent Tracker público confiável) -->
+    <script src="https://cdn.jsdelivr.net/npm/trystero@0.19.0/torrent.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -123,30 +125,17 @@
         </div>
     </div>
 
-    <!-- Script Firebase e Controle de Sala -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyD-MCCS-Tela-Demo-Key",
-            authDomain: "mccs-tela.firebaseapp.com",
-            projectId: "mccs-tela",
-            storageBucket: "mccs-tela.appspot.com",
-            messagingSenderId: "1234567890",
-            appId: "1:1234567890:web:abcdef"
-        };
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-
-        window.currentUser = '';
-        window.currentRoom = '';
-        window.localStream = null;
-        window.isSharing = false;
-        window.userId = 'user_' + Math.random().toString(36).substr(2, 9);
-        window.roomUnsubscribe = null;
-        window.activeUsers = {};
+    <!-- Script Trystero Global Torrent -->
+    <script>
+        let currentUser = '';
+        let currentRoom = '';
+        let localStream = null;
+        let isSharing = false;
+        
+        let room = null;
+        let sendNameData = null;
+        let sendVideoStream = null;
+        let activeUsers = {};
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -161,7 +150,7 @@
             }
         });
 
-        window.generateRandomRoom = function() {
+        function generateRandomRoom() {
             const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
             let result = '';
             for (let i = 0; i < 6; i++) {
@@ -170,7 +159,7 @@
             return 'mccs-' + result;
         }
 
-        window.handleLoginAction = async function() {
+        function handleLoginAction() {
             const username = document.getElementById('username-input').value.trim();
             if (!username) {
                 alert('Por favor, insira o seu nome.');
@@ -182,127 +171,130 @@
             document.getElementById('login-btn-text').innerText = 'Entrando...';
 
             localStorage.setItem('mccs_username', username);
-            window.currentUser = username;
+            currentUser = username;
 
             let hash = window.location.hash.replace('#', '');
             if (!hash) {
-                hash = window.generateRandomRoom();
+                hash = generateRandomRoom();
                 window.location.hash = hash;
             }
-            window.currentRoom = hash;
+            currentRoom = hash;
 
+            // Inicia o Trystero com o appId único + sala
+            initTrysteroRoom();
+        }
+
+        function initTrysteroRoom() {
             try {
-                const roomRef = doc(db, 'rooms', window.currentRoom);
-                const roomSnap = await getDoc(roomRef);
+                // Trystero via Torrent Trackers (funciona globalmente)
+                const config = { appId: 'mccs-tela-app-v2' };
+                room = window.trystero.joinRoom(config, currentRoom);
 
-                if (!roomSnap.exists()) {
-                    await setDoc(roomRef, {
-                        users: [{ id: window.userId, name: window.currentUser }]
-                    });
-                } else {
-                    await updateDoc(roomRef, {
-                        users: arrayUnion({ id: window.userId, name: window.currentUser })
-                    });
-                }
+                activeUsers[room.selfId] = { name: currentUser, isSelf: true };
 
-                window.roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        const users = data.users || [];
-                        window.activeUsers = {};
-                        users.forEach(u => {
-                            window.activeUsers[u.id] = u.name;
-                        });
-                        window.updateUsersList();
+                room.onPeerJoin(peerId => {
+                    console.log('Alguém entrou na sala:', peerId);
+                    // Avisa o novo peer sobre o meu nome
+                    if (sendNameData) sendNameData(currentUser, peerId);
+                    // Se eu estiver transmitindo, manda o vídeo pra ele
+                    if (isSharing && localStream && sendVideoStream) {
+                        sendVideoStream(localStream, peerId);
                     }
                 });
 
-                window.addEventListener('beforeunload', async () => {
-                    await updateDoc(roomRef, {
-                        users: arrayRemove({ id: window.userId, name: window.currentUser })
-                    });
+                room.onPeerLeave(peerId => {
+                    console.log('Alguém saiu da sala:', peerId);
+                    delete activeUsers[peerId];
+                    removeVideoStream(peerId);
+                    updateUsersList();
                 });
 
-                document.getElementById('room-title-display').innerText = window.currentRoom;
+                // Ação para trocar nomes de usuário
+                const [sendName, getNamestream] = room.makeAction('user-name');
+                sendNameData = sendName;
+                getNamestream((name, peerId) => {
+                    if (!activeUsers[peerId]) activeUsers[peerId] = {};
+                    activeUsers[peerId].name = name;
+                    updateUsersList();
+                    // Quando eu recebo o nome de alguém novo, mando o meu de volta pra ele me conhecer
+                    sendNameData(currentUser, peerId);
+                });
+
+                // Ação para receber vídeo da tela
+                const [sendStream, getStream] = room.makeAction('screen-stream');
+                sendVideoStream = sendStream;
+
+                getStream((stream, peerId) => {
+                    const userName = activeUsers[peerId]?.name || 'Usuário';
+                    addVideoStream(peerId, stream, userName, false);
+                });
+
+                // Libera a interface
+                document.getElementById('room-title-display').innerText = currentRoom;
                 document.getElementById('login-screen').classList.add('hidden');
                 document.getElementById('room-screen').classList.remove('hidden');
+                updateUsersList();
 
             } catch (err) {
-                console.error("Erro ao entrar na sala:", err);
-                // Fallback local caso o Firebase demo atinja limites da API gratuita
-                document.getElementById('room-title-display').innerText = window.currentRoom;
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('room-screen').classList.remove('hidden');
-                window.activeUsers[window.userId] = window.currentUser;
-                window.updateUsersList();
+                console.error("Erro no Trystero:", err);
+                alert("Falha ao conectar na rede P2P. Verifique sua conexão.");
+                location.reload();
             }
         }
 
-        window.leaveRoom = function() {
-            if (window.localStream) {
-                window.localStream.getTracks().forEach(track => track.stop());
+        function leaveRoom() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
             }
-            if (window.roomUnsubscribe) {
-                window.roomUnsubscribe();
+            if (room) {
+                room.leave();
             }
             window.location.hash = '';
             location.reload();
         }
 
-        window.copyRoomLink = function() {
+        function copyRoomLink() {
             navigator.clipboard.writeText(window.location.href);
             alert('Link da sala copiado! Mande para os seus amigos.');
         }
 
-        window.updateUsersList = function() {
+        function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const ids = Object.keys(window.activeUsers);
-            const total = ids.length > 0 ? ids.length : 1;
-
-            document.getElementById('sidebar-count').innerText = total;
-            document.getElementById('user-count-badge').innerText = `${total} online`;
+            const userIds = Object.keys(activeUsers);
             
-            let html = '';
-            if (ids.length > 0) {
-                ids.forEach(id => {
-                    const name = window.activeUsers[id] || 'Convidado';
-                    const isYou = id === window.userId ? ' (Você)' : '';
-                    html += `
-                        <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
-                            <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                                ${name.charAt(0).toUpperCase()}
-                            </div>
-                            <span class="text-sm font-medium text-white truncate">${name}${isYou}</span>
-                        </div>
-                    `;
-                });
-            } else {
-                html += `
+            document.getElementById('sidebar-count').innerText = userIds.length;
+            document.getElementById('user-count-badge').innerText = `${userIds.length} online`;
+            
+            listEl.innerHTML = '';
+            userIds.forEach(id => {
+                const user = activeUsers[id];
+                const displayName = user.name || 'Convidado';
+                const isYou = user.isSelf ? ' (Você)' : '';
+
+                listEl.innerHTML += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
                         <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                            ${window.currentUser.charAt(0).toUpperCase()}
+                            ${displayName.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${window.currentUser} (Você)</span>
+                        <span class="text-sm font-medium text-white truncate">${displayName}${isYou}</span>
                     </div>
                 `;
-            }
-
-            listEl.innerHTML = html;
+            });
         }
 
-        window.openSettings = function() {
+        function openSettings() {
             document.getElementById('settings-modal').classList.remove('hidden');
         }
 
-        window.closeSettings = function() {
+        function closeSettings() {
             document.getElementById('settings-modal').classList.add('hidden');
         }
 
-        window.toggleShareScreen = async function() {
+        async function toggleShareScreen() {
             const shareBtn = document.getElementById('share-btn');
             const shareBtnText = document.getElementById('share-btn-text');
 
-            if (!window.isSharing) {
+            if (!isSharing) {
                 try {
                     const resolution = document.getElementById('setting-resolution').value;
                     const fps = parseInt(document.getElementById('setting-fps').value);
@@ -316,47 +308,64 @@
                         audio: true
                     };
 
-                    window.localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
-                    window.isSharing = true;
+                    localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+                    isSharing = true;
 
                     shareBtn.classList.remove('bg-[#248046]', 'hover:bg-[#1a6335]');
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    window.addVideoStream('self', window.localStream, window.currentUser + ' (Você)', true);
+                    if (sendVideoStream) {
+                        sendVideoStream(localStream);
+                    }
 
-                    window.localStream.getVideoTracks()[0].onended = () => {
-                        window.stopSharing();
+                    addVideoStream('self', localStream, currentUser + ' (Você)', true);
+
+                    localStream.getVideoTracks()[0].onended = () => {
+                        stopSharing();
                     };
 
                 } catch (err) {
                     console.error("Erro ao capturar tela:", err);
                 }
             } else {
-                window.stopSharing();
+                stopSharing();
             }
         }
 
-        window.stopSharing = function() {
-            if (window.localStream) {
-                window.localStream.getTracks().forEach(track => track.stop());
-                window.localStream = null;
+        function stopSharing() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
             }
-            window.isSharing = false;
+            isSharing = false;
 
             const shareBtn = document.getElementById('share-btn');
             shareBtn.classList.remove('bg-[#da373c]', 'hover:bg-[#a1282c]');
             shareBtn.classList.add('bg-[#248046]', 'hover:bg-[#1a6335]');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
-            window.removeVideoStream('self');
+            removeVideoStream('self');
+            
+            // Avisa a sala que eu parei removendo o stream via Trystero
+            // Como Trystero não tem um "unshare" nativo, criamos uma aba morta
+            if (sendVideoStream) {
+                // Envia null ou array vazio pra limpar o track nos peers
+                const emptyStream = new MediaStream();
+                sendVideoStream(emptyStream);
+            }
         }
 
-        window.addVideoStream = function(id, stream, name, isLocal = false) {
+        function addVideoStream(id, stream, name, isLocal = false) {
             document.getElementById('empty-state').classList.add('hidden');
             const grid = document.getElementById('video-grid');
 
-            window.removeVideoStream(id);
+            removeVideoStream(id);
+
+            // Verifica se a stream enviada é válida e tem tracks
+            if (!stream || stream.getTracks().length === 0) {
+                return; 
+            }
 
             const container = document.createElement('div');
             container.id = `video-container-${id}`;
@@ -378,7 +387,7 @@
             grid.appendChild(container);
         }
 
-        window.removeVideoStream = function(id) {
+        function removeVideoStream(id) {
             const container = document.getElementById(`video-container-${id}`);
             if (container) {
                 container.remove();
