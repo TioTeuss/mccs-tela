@@ -1,3 +1,8 @@
+Com essa adição, a sala vai ficar perfeita! Adicionei um **botão de volume** ao lado do botão de tela cheia. Assim, quem estiver assistindo pode mutar ou desmutar o som da transmissão a qualquer momento (o botão só aparece para quem está assistindo, afinal a sua própria tela já não reproduz o seu áudio de volta para não dar eco).
+
+Aqui está o código completo do `index.html` atualizado com a função de mutar o áudio, mantendo os macacos, o tema vermelho e preto e a centralização:
+
+```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -143,7 +148,6 @@
         let myId = 'usr_' + Math.random().toString(36).substr(2, 9);
         let peers = {}; 
 
-        // Lista de nomes de macacos para o sorteio
         const monkeyNames = [
             'Babuíno', 'Gorila', 'Chimpanzé', 'Orangotango', 'Macaco Prego', 
             'Sagui', 'Bugio', 'Macaco-aranha', 'Mico-leão', 'Mandril'
@@ -154,7 +158,6 @@
             if (savedName) {
                 document.getElementById('username-input').value = savedName;
             } else {
-                // Sorteia um nome de macaco aleatório
                 const randomMonkey = monkeyNames[Math.floor(Math.random() * monkeyNames.length)];
                 document.getElementById('username-input').value = randomMonkey;
             }
@@ -428,6 +431,24 @@
             }
         }
 
+        // Nova Função: Mutar/Desmutar Som do Vídeo Remoto
+        function toggleAudio(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const video = container.querySelector('video');
+            if (!video) return;
+            
+            const icon = document.getElementById(`audio-icon-${containerId}`);
+            
+            video.muted = !video.muted;
+            
+            if (video.muted) {
+                icon.className = 'fa-solid fa-volume-xmark text-red-500';
+            } else {
+                icon.className = 'fa-solid fa-volume-high text-white';
+            }
+        }
+
         async function toggleShareScreen() {
             const shareBtn = document.getElementById('share-btn');
             const shareBtnText = document.getElementById('share-btn-text');
@@ -460,7 +481,6 @@
                         });
                     });
 
-                    // Para mim (isLocal = true), a tela é adicionada e o vídeo carrega direto
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
                     localStream.getVideoTracks()[0].onended = () => {
@@ -504,7 +524,6 @@
 
             const containerId = `video-container-${id}`;
             const container = document.createElement('div');
-            // Largura e altura maximizadas para ficar no centro
             container.id = containerId;
             container.className = 'group relative bg-black rounded-xl overflow-hidden shadow-[0_0_15px_rgba(220,38,38,0.15)] border border-red-900/40 aspect-video flex items-center justify-center w-full max-w-5xl transition-all duration-300';
 
@@ -512,13 +531,11 @@
             video.playsInline = true;
             video.className = 'w-full h-full object-contain';
             
-            // Controle de Overlay para clicar em assistir se for outro usuário
             if (isLocal) {
                 video.muted = true;
                 video.srcObject = stream;
                 video.autoplay = true;
             } else {
-                // Tela de aceitação (Opt-in)
                 const watchOverlay = document.createElement('div');
                 watchOverlay.className = 'absolute inset-0 bg-black/90 flex flex-col items-center justify-center z-20 backdrop-blur-sm transition-opacity duration-300';
                 watchOverlay.innerHTML = `
@@ -544,14 +561,24 @@
             const label = document.createElement('div');
             label.className = 'absolute bottom-3 left-3 right-3 flex justify-between items-center bg-black/80 border border-red-900/50 backdrop-blur-md px-4 py-2 rounded-lg text-xs font-medium text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10';
             
+            // Renderiza o botão de volume apenas se NÃO for a própria transmissão (isLocal = false)
+            const volumeBtnHTML = !isLocal ? `
+                <button onclick="toggleAudio('${containerId}')" class="bg-[#111] hover:bg-[#222] border border-red-900/50 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.2)]" title="Ligar/Desligar Som">
+                    <i id="audio-icon-${containerId}" class="fa-solid fa-volume-high"></i>
+                </button>
+            ` : '';
+
             label.innerHTML = `
                 <div class="flex items-center space-x-2">
                     <i class="fa-solid fa-desktop text-red-500"></i>
                     <span class="font-bold tracking-wide">${name}</span>
                 </div>
-                <button onclick="toggleFullScreen('${containerId}')" class="bg-red-600 hover:bg-red-500 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.4)]" title="Tela Cheia">
-                    <i class="fa-solid fa-expand"></i>
-                </button>
+                <div class="flex items-center space-x-2">
+                    ${volumeBtnHTML}
+                    <button onclick="toggleFullScreen('${containerId}')" class="bg-red-600 hover:bg-red-500 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.4)]" title="Tela Cheia">
+                        <i class="fa-solid fa-expand"></i>
+                    </button>
+                </div>
             `;
 
             container.appendChild(video);
@@ -565,10 +592,12 @@
                 container.remove();
             }
             const grid = document.getElementById('video-grid');
-            if (grid.children.length <= 1) { // Só tem o empty-state
+            if (grid.children.length <= 1) { 
                 document.getElementById('empty-state').classList.remove('hidden');
             }
         }
     </script>
 </body>
 </html>
+
+```
