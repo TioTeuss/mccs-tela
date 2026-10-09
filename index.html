@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCCS Tela</title>
+    <title>MCCS Tela 🦍</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
@@ -13,29 +13,38 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        
+        /* Estilização da barra de rolagem vermelha */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #dc2626; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #b91c1c; }
     </style>
 </head>
-<body class="bg-[#313338] text-[#dbdee1] h-screen flex flex-col overflow-hidden">
+<body class="bg-black text-gray-200 h-screen flex flex-col overflow-hidden">
 
     <!-- TELA 1: LOGIN / IDENTIFICAÇÃO -->
-    <div id="login-screen" class="fixed inset-0 bg-[#1e1f22] z-50 flex items-center justify-center p-4">
-        <div class="bg-[#313338] w-full max-w-md p-8 rounded-2xl shadow-2xl border border-[#232428]">
-            <div class="text-center mb-6">
-                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#5865F2] text-white text-2xl font-bold mb-3 shadow-lg">
-                    <i class="fa-solid fa-display"></i>
+    <div id="login-screen" class="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+        <div class="bg-[#0a0a0a] w-full max-w-md p-8 rounded-2xl shadow-2xl border-2 border-red-600 relative overflow-hidden">
+            <!-- Macaco de fundo decorativo -->
+            <div class="absolute -top-10 -right-10 text-9xl opacity-5">🦍</div>
+
+            <div class="text-center mb-6 relative z-10">
+                <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-600 text-white text-3xl mb-3 shadow-[0_0_15px_rgba(220,38,38,0.5)]">
+                    🐒
                 </div>
-                <h1 class="text-2xl font-bold text-white">MCCS Tela</h1>
-                <p class="text-sm text-[#949ba4] mt-1">Transmissão de tela rápida e privada</p>
+                <h1 class="text-2xl font-bold text-white uppercase tracking-wider">MCCS Tela</h1>
+                <p class="text-sm text-red-400 mt-1">Transmissão P2P • Rápida e Bruta</p>
             </div>
             
-            <div class="space-y-4">
+            <div class="space-y-4 relative z-10">
                 <div>
-                    <label class="block text-xs font-bold uppercase text-[#949ba4] mb-2">Seu Nome / Apelido</label>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-2">Seu Nome / Apelido</label>
                     <input type="text" id="username-input" value="Teus" placeholder="Ex: Teus" 
-                        class="w-full bg-[#1e1f22] border border-transparent focus:border-[#5865F2] rounded-lg p-3 text-white outline-none transition">
+                        class="w-full bg-[#111] border border-red-900/50 focus:border-red-500 rounded-lg p-3 text-white outline-none transition placeholder-gray-600">
                 </div>
                 
-                <button id="login-btn" onclick="handleLoginAction()" class="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium py-3 rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+                <button id="login-btn" onclick="handleLoginAction()" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition shadow-[0_0_10px_rgba(220,38,38,0.3)] hover:shadow-[0_0_20px_rgba(220,38,38,0.6)] flex items-center justify-center space-x-2 uppercase tracking-wide">
                     <i class="fa-solid fa-arrow-right-to-bracket" id="login-icon"></i>
                     <span id="login-btn-text">Criar Nova Tela</span>
                 </button>
@@ -46,50 +55,50 @@
     <!-- TELA 2: SALA DE TRANSMISSÃO -->
     <div id="room-screen" class="hidden flex-1 flex h-full">
         <!-- Main Content (Vídeos) -->
-        <div class="flex-1 flex flex-col bg-[#313338] relative">
+        <div class="flex-1 flex flex-col bg-[#050505] relative">
             <!-- Topbar -->
-            <div class="h-14 border-b border-[#232428] px-4 flex items-center justify-between bg-[#313338]">
+            <div class="h-14 border-b border-red-900/40 px-4 flex items-center justify-between bg-black">
                 <div class="flex items-center space-x-3">
-                    <i class="fa-solid fa-hashtag text-[#80848e] text-xl"></i>
-                    <span id="room-title-display" class="font-bold text-white">sala</span>
-                    <button onclick="copyRoomLink()" class="bg-[#2b2d31] hover:bg-[#35373c] text-[#949ba4] hover:text-white text-xs px-2.5 py-1 rounded transition flex items-center space-x-1.5" title="Copiar link da sala">
-                        <i class="fa-solid fa-copy"></i>
+                    <span class="text-xl">🦧</span>
+                    <span id="room-title-display" class="font-bold text-red-500 tracking-wider uppercase">sala</span>
+                    <button onclick="copyRoomLink()" class="bg-[#111] hover:bg-[#222] border border-red-900/30 text-gray-400 hover:text-red-400 text-xs px-2.5 py-1 rounded transition flex items-center space-x-1.5" title="Copiar link da sala">
+                        <i class="fa-solid fa-link"></i>
                         <span>Copiar Link</span>
                     </button>
-                    <span class="text-xs bg-[#2b2d31] text-[#949ba4] px-2 py-0.5 rounded-full" id="user-count-badge">1 online</span>
+                    <span class="text-xs bg-red-900/20 text-red-400 border border-red-900/50 px-2 py-0.5 rounded-full" id="user-count-badge">1 primata online</span>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <button onclick="openSettings()" class="bg-[#2b2d31] hover:bg-[#35373c] text-white px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-2">
+                    <button onclick="openSettings()" class="bg-[#111] hover:bg-[#222] border border-red-900/30 text-gray-300 px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-2">
                         <i class="fa-solid fa-gear"></i>
                         <span>Qualidade</span>
                     </button>
-                    <button onclick="toggleShareScreen()" id="share-btn" class="bg-[#248046] hover:bg-[#1a6335] text-white px-4 py-1.5 rounded-lg text-sm font-medium transition flex items-center space-x-2">
-                        <i class="fa-solid fa-share-from-square"></i>
+                    <button onclick="toggleShareScreen()" id="share-btn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-sm font-bold uppercase tracking-wide transition flex items-center space-x-2 shadow-[0_0_10px_rgba(220,38,38,0.3)]">
+                        <i class="fa-solid fa-desktop"></i>
                         <span id="share-btn-text">Transmitir Tela</span>
                     </button>
-                    <button onclick="leaveRoom()" class="bg-[#da373c] hover:bg-[#a1282c] text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">
+                    <button onclick="leaveRoom()" class="bg-[#111] hover:bg-red-900 text-gray-400 hover:text-white px-3 py-1.5 rounded-lg text-sm font-medium transition">
                         Sair
                     </button>
                 </div>
             </div>
 
             <!-- Video Grid Area -->
-            <div class="flex-1 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto items-center justify-center bg-[#1e1f22]" id="video-grid">
+            <div class="flex-1 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto items-center justify-center bg-[#050505]" id="video-grid">
                 <!-- Estado Vazio / Tela Inicial -->
-                <div id="empty-state" class="col-span-full flex flex-col items-center justify-center text-center text-[#949ba4]">
-                    <div class="w-20 h-20 rounded-full bg-[#2b2d31] flex items-center justify-center text-3xl mb-4 text-[#dbdee1]">
-                        <i class="fa-solid fa-video-slash"></i>
+                <div id="empty-state" class="col-span-full flex flex-col items-center justify-center text-center text-gray-500">
+                    <div class="w-24 h-24 rounded-full bg-red-900/10 border border-red-900/30 flex items-center justify-center text-5xl mb-4 text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.1)]">
+                        🙈
                     </div>
-                    <p class="text-lg font-medium text-white">Nenhuma transmissão ativa no momento</p>
-                    <p class="text-sm mt-1">Clique em "Transmitir Tela" acima para começar a compartilhar.</p>
+                    <p class="text-xl font-bold text-gray-300">Nenhum macaco transmitindo no momento</p>
+                    <p class="text-sm mt-2 text-red-500/70">Clique em "Transmitir Tela" para compartilhar o seu monitor.</p>
                 </div>
             </div>
         </div>
 
         <!-- Sidebar (Usuários na Sala) -->
-        <div class="w-60 bg-[#2b2d31] border-l border-[#232428] flex flex-col">
-            <div class="p-4 border-b border-[#232428]">
-                <h3 class="text-xs font-bold uppercase text-[#949ba4] tracking-wider">Na Sala — <span id="sidebar-count">1</span></h3>
+        <div class="w-60 bg-[#0a0a0a] border-l border-red-900/40 flex flex-col">
+            <div class="p-4 border-b border-red-900/40 bg-black">
+                <h3 class="text-xs font-bold uppercase text-red-500 tracking-widest">No Bando — <span id="sidebar-count">1</span></h3>
             </div>
             <div id="users-list" class="p-2 space-y-1 overflow-y-auto flex-1">
                 <!-- Lista injetada via JS -->
@@ -98,21 +107,21 @@
     </div>
 
     <!-- MODAL DE CONFIGURAÇÕES DE VÍDEO -->
-    <div id="settings-modal" class="hidden fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-        <div class="bg-[#313338] w-full max-w-sm rounded-2xl p-6 border border-[#232428] shadow-2xl">
-            <h3 class="text-lg font-bold text-white mb-4">Configurações de Transmissão</h3>
+    <div id="settings-modal" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-[#0a0a0a] w-full max-w-sm rounded-2xl p-6 border border-red-600 shadow-[0_0_20px_rgba(220,38,38,0.2)]">
+            <h3 class="text-lg font-bold text-white mb-4 uppercase tracking-wide">Configurações 🦍</h3>
             
             <div class="space-y-4">
                 <div>
-                    <label class="block text-xs font-bold uppercase text-[#949ba4] mb-2">Resolução</label>
-                    <select id="setting-resolution" class="w-full bg-[#1e1f22] border border-transparent focus:border-[#5865F2] rounded-lg p-2.5 text-white outline-none">
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-2">Resolução</label>
+                    <select id="setting-resolution" class="w-full bg-[#111] border border-red-900/50 focus:border-red-500 rounded-lg p-2.5 text-white outline-none">
                         <option value="1080">1080p (Full HD)</option>
                         <option value="720" selected>720p (HD)</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-bold uppercase text-[#949ba4] mb-2">Taxa de Quadros (FPS)</label>
-                    <select id="setting-fps" class="w-full bg-[#1e1f22] border border-transparent focus:border-[#5865F2] rounded-lg p-2.5 text-white outline-none">
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-2">Taxa de Quadros (FPS)</label>
+                    <select id="setting-fps" class="w-full bg-[#111] border border-red-900/50 focus:border-red-500 rounded-lg p-2.5 text-white outline-none">
                         <option value="60" selected>60 FPS (Fluido)</option>
                         <option value="30">30 FPS (Leve)</option>
                     </select>
@@ -120,7 +129,7 @@
             </div>
 
             <div class="mt-6 flex justify-end space-x-2">
-                <button onclick="closeSettings()" class="bg-[#4e5058] hover:bg-[#6d6f78] text-white px-4 py-2 rounded-lg text-sm transition">Fechar</button>
+                <button onclick="closeSettings()" class="bg-[#111] hover:bg-red-900 border border-red-900/30 text-white px-5 py-2 rounded-lg text-sm font-bold uppercase transition">Fechar</button>
             </div>
         </div>
     </div>
@@ -132,11 +141,10 @@
         let localStream = null;
         let isSharing = false;
         
-        // MQTT broker público estável (WebSockets sobre SSL)
         const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
         let mqttClient = null;
         let myId = 'usr_' + Math.random().toString(36).substr(2, 9);
-        let peers = {}; // Guarda as conexões de vídeo com cada utilizador
+        let peers = {}; 
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -169,7 +177,7 @@
 
             const btn = document.getElementById('login-btn');
             btn.disabled = true;
-            document.getElementById('login-btn-text').innerText = 'Conectando aos servidores...';
+            document.getElementById('login-btn-text').innerText = 'Conectando...';
 
             localStorage.setItem('mccs_username', username);
             currentUser = username;
@@ -185,20 +193,14 @@
         }
 
         function initSignaling() {
-            // Conecta ao canal global
             mqttClient = mqtt.connect(brokerUrl);
 
             mqttClient.on('connect', () => {
-                console.log('Sinalização Online!');
                 const baseTopic = `mccstela/${currentRoom}`;
                 
-                // Subscreve à sala
                 mqttClient.subscribe(`${baseTopic}/#`);
-
-                // Avisa todos que entramos
                 mqttClient.publish(`${baseTopic}/join`, JSON.stringify({ id: myId, name: currentUser }));
 
-                // Prepara o adeus caso a aba seja fechada
                 window.addEventListener('beforeunload', () => {
                     mqttClient.publish(`${baseTopic}/leave`, JSON.stringify({ id: myId }));
                 });
@@ -207,8 +209,7 @@
             });
 
             mqttClient.on('error', (err) => {
-                console.error("Erro no MQTT:", err);
-                alert("Rede bloqueada. Tente usar outra internet ou desligar o Adblock.");
+                alert("Rede bloqueada. Tente usar outra internet.");
                 location.reload();
             });
 
@@ -216,29 +217,21 @@
                 const msg = JSON.parse(message.toString());
                 const baseTopic = `mccstela/${currentRoom}`;
 
-                // 1. Alguém novo entrou na sala
                 if (topic === `${baseTopic}/join` && msg.id !== myId) {
-                    console.log('Novo usuário:', msg.name);
                     createPeer(msg.id, msg.name, true);
-                    
-                    // Respondemos para ele saber que já estamos aqui
                     mqttClient.publish(`${baseTopic}/here`, JSON.stringify({ 
                         id: myId, name: currentUser, target: msg.id 
                     }));
                 }
 
-                // 2. Recebemos resposta de alguém que já estava na sala
                 if (topic === `${baseTopic}/here` && msg.target === myId) {
-                    console.log('Usuário já estava na sala:', msg.name);
                     createPeer(msg.id, msg.name, false);
                 }
 
-                // 3. Comunicação direta WebRTC
                 if (topic === `${baseTopic}/signal/${myId}`) {
                     handleSignal(msg.from, msg.name, msg.signal);
                 }
 
-                // 4. Alguém saiu
                 if (topic === `${baseTopic}/leave` && msg.id !== myId) {
                     removePeer(msg.id);
                 }
@@ -257,7 +250,6 @@
 
             peers[peerId] = { pc, name: peerName, senders: [] };
 
-            // Se eu já estiver compartilhando a tela, injeta no novo amigo
             if (isSharing && localStream) {
                 localStream.getTracks().forEach(track => {
                     const sender = pc.addTrack(track, localStream);
@@ -265,28 +257,24 @@
                 });
             }
 
-            // Descobre caminhos de rede
             pc.onicecandidate = (e) => {
                 if (e.candidate) {
                     sendSignal(peerId, { type: 'candidate', candidate: e.candidate });
                 }
             };
 
-            // Recebe o vídeo do amigo
             pc.ontrack = (e) => {
                 if (e.streams && e.streams[0]) {
                     addVideoStream(peerId, e.streams[0], peerName, false);
                 }
             };
 
-            // Trata falhas de conexão
             pc.oniceconnectionstatechange = () => {
                 if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
                     removePeer(peerId);
                 }
             };
 
-            // Faz a negociação automática sempre que as faixas de vídeo mudam
             let isNegotiating = false;
             pc.onnegotiationneeded = async () => {
                 if (isNegotiating) return;
@@ -295,9 +283,7 @@
                     const offer = await pc.createOffer();
                     await pc.setLocalDescription(offer);
                     sendSignal(peerId, offer);
-                } catch (err) {
-                    console.error("Erro na negociação:", err);
-                } finally {
+                } catch (err) {} finally {
                     isNegotiating = false;
                 }
             };
@@ -306,7 +292,6 @@
                 isNegotiating = (pc.signalingState !== "stable");
             };
 
-            // Se eu criei a conexão (novo visitante), eu forço um canal de dados para iniciar
             if (isInitiator) {
                 pc.createDataChannel('mccs-init-channel');
             }
@@ -330,7 +315,6 @@
             }
 
             const pc = peer.pc;
-
             try {
                 if (signal.type === 'offer') {
                     await pc.setRemoteDescription(new RTCSessionDescription(signal));
@@ -342,9 +326,7 @@
                 } else if (signal.type === 'candidate') {
                     await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
                 }
-            } catch (err) {
-                console.error('Erro ao processar o sinal WebRTC:', err);
-            }
+            } catch (err) {}
         }
 
         function removePeer(id) {
@@ -377,34 +359,34 @@
 
         function copyRoomLink() {
             navigator.clipboard.writeText(window.location.href);
-            alert('Link da sala copiado! Mande para os seus amigos.');
+            alert('Link da sala copiado! Chame os outros macacos.');
         }
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
             const ids = Object.keys(peers);
-            const total = ids.length + 1; // +1 Você
+            const total = ids.length + 1; 
 
             document.getElementById('sidebar-count').innerText = total;
-            document.getElementById('user-count-badge').innerText = `${total} online`;
+            document.getElementById('user-count-badge').innerText = `${total} primata(s) online`;
             
             let html = `
-                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
-                    <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#111] transition border border-transparent hover:border-red-900/30">
+                    <div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-white text-sm shadow-lg">
                         ${currentUser.charAt(0).toUpperCase()}
                     </div>
-                    <span class="text-sm font-medium text-white truncate">${currentUser} (Você)</span>
+                    <span class="text-sm font-bold text-white truncate">${currentUser} (Você)</span>
                 </div>
             `;
 
             ids.forEach(id => {
-                const name = peers[id].name || 'Convidado';
+                const name = peers[id].name || 'Macaco';
                 html += `
-                    <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
-                        <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                    <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#111] transition border border-transparent hover:border-red-900/30">
+                        <div class="w-8 h-8 rounded-full bg-[#222] border border-red-900 flex items-center justify-center font-bold text-red-500 text-sm">
                             ${name.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${name}</span>
+                        <span class="text-sm font-medium text-gray-300 truncate">${name}</span>
                     </div>
                 `;
             });
@@ -418,6 +400,26 @@
 
         function closeSettings() {
             document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        // Função nativa para colocar o container do vídeo em Tela Cheia
+        function toggleFullScreen(containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            if (!document.fullscreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                } else if (container.msRequestFullscreen) {
+                    container.msRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
         }
 
         async function toggleShareScreen() {
@@ -441,11 +443,10 @@
                     localStream = await navigator.mediaDevices.getDisplayMedia(constraints);
                     isSharing = true;
 
-                    shareBtn.classList.remove('bg-[#248046]', 'hover:bg-[#1a6335]');
-                    shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
+                    shareBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                    shareBtn.classList.add('bg-[#111]', 'hover:bg-red-900', 'border', 'border-red-600');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    // Envia a tela para todos que já estão conectados
                     Object.values(peers).forEach(peer => {
                         localStream.getTracks().forEach(track => {
                             const sender = peer.pc.addTrack(track, localStream);
@@ -459,9 +460,7 @@
                         stopSharing();
                     };
 
-                } catch (err) {
-                    console.error("Erro ao capturar tela:", err);
-                }
+                } catch (err) {}
             } else {
                 stopSharing();
             }
@@ -475,11 +474,10 @@
             isSharing = false;
 
             const shareBtn = document.getElementById('share-btn');
-            shareBtn.classList.remove('bg-[#da373c]', 'hover:bg-[#a1282c]');
-            shareBtn.classList.add('bg-[#248046]', 'hover:bg-[#1a6335]');
+            shareBtn.classList.remove('bg-[#111]', 'hover:bg-red-900', 'border', 'border-red-600');
+            shareBtn.classList.add('bg-red-600', 'hover:bg-red-700');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
-            // Remove o stream das conexões existentes
             Object.values(peers).forEach(peer => {
                 peer.senders.forEach(sender => {
                     try { peer.pc.removeTrack(sender); } catch(e) {}
@@ -495,13 +493,12 @@
             const grid = document.getElementById('video-grid');
 
             removeVideoStream(id);
-
-            // Não desenha streams vazios
             if (!stream || stream.getTracks().length === 0) return;
 
+            const containerId = `video-container-${id}`;
             const container = document.createElement('div');
-            container.id = `video-container-${id}`;
-            container.className = 'relative bg-[#111214] rounded-xl overflow-hidden shadow-lg border border-[#232428] aspect-video flex items-center justify-center';
+            container.id = containerId;
+            container.className = 'group relative bg-black rounded-xl overflow-hidden shadow-[0_0_15px_rgba(220,38,38,0.15)] border border-red-900/40 aspect-video flex items-center justify-center';
 
             const video = document.createElement('video');
             video.srcObject = stream;
@@ -511,8 +508,18 @@
             video.className = 'w-full h-full object-contain';
 
             const label = document.createElement('div');
-            label.className = 'absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1 rounded-lg text-xs font-medium text-white flex items-center space-x-2';
-            label.innerHTML = `<i class="fa-solid fa-display text-[#5865F2]"></i><span>Tela de ${name}</span>`;
+            label.className = 'absolute bottom-3 left-3 right-3 flex justify-between items-center bg-black/80 border border-red-900/50 backdrop-blur-md px-4 py-2 rounded-lg text-xs font-medium text-white opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity duration-300';
+            
+            // Aqui adicionamos o botão de tela cheia que chama a função nativa
+            label.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-desktop text-red-500"></i>
+                    <span class="font-bold tracking-wide">${name}</span>
+                </div>
+                <button onclick="toggleFullScreen('${containerId}')" class="bg-red-600 hover:bg-red-500 text-white w-8 h-8 rounded flex items-center justify-center transition shadow-[0_0_10px_rgba(220,38,38,0.4)]" title="Tela Cheia">
+                    <i class="fa-solid fa-expand"></i>
+                </button>
+            `;
 
             container.appendChild(video);
             container.appendChild(label);
