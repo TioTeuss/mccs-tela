@@ -125,7 +125,7 @@
         </div>
     </div>
 
-    <!-- Script Principal com Conexão P2P Real -->
+    <!-- Script Principal Corrigido -->
     <script>
         let currentUser = '';
         let currentRoom = '';
@@ -142,7 +142,6 @@
                 document.getElementById('username-input').value = savedName;
             }
 
-            // Se a URL já contém uma sala (#...), ajusta o texto do botão de entrada
             const hash = window.location.hash.replace('#', '');
             if (hash) {
                 document.getElementById('login-btn-text').innerText = 'Entrar na Sala';
@@ -212,6 +211,10 @@
             room.onPeerJoin(peerId => {
                 console.log('Peer entrou:', peerId);
                 sendNameAction(currentUser);
+                // Se já estivermos transmitindo, reenvia o stream para o novo participante
+                if (localStream && sendVideoStream) {
+                    sendVideoStream(localStream);
+                }
             });
 
             room.onPeerLeave(peerId => {
@@ -227,6 +230,8 @@
                 if (!activeUsers[peerId]) activeUsers[peerId] = {};
                 activeUsers[peerId].name = name;
                 updateUsersList();
+                // Envia nosso nome de volta caso ele tenha entrado depois
+                sendNameAction(currentUser);
             });
 
             const [sendStream, getStream] = room.makeAction('screen-stream');
