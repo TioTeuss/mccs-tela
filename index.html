@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Trystero (WebRTC simplificado para P2P em salas) -->
+    <script src="https://cdn.jsdelivr.net/npm/trystero@0.19.0/nostr.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -23,7 +25,7 @@
                     <i class="fa-solid fa-display"></i>
                 </div>
                 <h1 class="text-2xl font-bold text-white">MCCS Tela</h1>
-                <p class="text-sm text-[#949ba4] mt-1">Transmissão de tela rápida e privada</p>
+                <p class="text-sm text-[#949ba4] mt-1">Transmissão de tela P2P rápida e privada</p>
             </div>
             
             <div class="space-y-4">
@@ -33,9 +35,9 @@
                         class="w-full bg-[#1e1f22] border border-transparent focus:border-[#5865F2] rounded-lg p-3 text-white outline-none transition">
                 </div>
                 
-                <button onclick="createAndJoinRoom()" class="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium py-3 rounded-lg transition shadow-md flex items-center justify-center space-x-2">
-                    <i class="fa-solid fa-plus-circle"></i>
-                    <span>Criar Tela</span>
+                <button onclick="handleLoginAction()" class="w-full bg-[#5865F2] hover:bg-[#4752c4] text-white font-medium py-3 rounded-lg transition shadow-md flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-arrow-right-to-bracket" id="login-icon"></i>
+                    <span id="login-btn-text">Criar Nova Tela</span>
                 </button>
             </div>
         </div>
@@ -123,22 +125,28 @@
         </div>
     </div>
 
-    <!-- Script de Execução e Rotas por URL Hash -->
+    <!-- Script Principal com Conexão P2P Real -->
     <script>
         let currentUser = '';
         let currentRoom = '';
         let localStream = null;
         let isSharing = false;
+        
+        let room = null;
+        let sendVideoStream = null;
+        let activeUsers = {};
 
-        // Verificar se já existe uma sala na URL (ex: #sala-xyz)
         window.addEventListener('DOMContentLoaded', () => {
+            const savedName = localStorage.getItem('mccs_username');
+            if (savedName) {
+                document.getElementById('username-input').value = savedName;
+            }
+
+            // Se a URL já contém uma sala (#...), ajusta o texto do botão de entrada
             const hash = window.location.hash.replace('#', '');
             if (hash) {
-                // Se a URL já tiver uma sala, exibe o login pedindo apenas o nome para entrar direto
-                const roomInputStorage = localStorage.getItem('mccs_username');
-                if (roomInputStorage) {
-                    document.getElementById('username-input').value = roomInputStorage;
-                }
+                document.getElementById('login-btn-text').innerText = 'Entrar na Sala';
+                document.getElementById('login-icon').className = 'fa-solid fa-arrow-right-to-bracket';
             }
         });
 
@@ -148,10 +156,10 @@
             for (let i = 0; i < 6; i++) {
                 result += chars.charAt(Math.floor(Math.random() * chars.length));
             }
-            return 'tela-' + result;
+            return 'mccs-' + result;
         }
 
-        function createAndJoinRoom() {
+        function handleLoginAction() {
             const username = document.getElementById('username-input').value.trim();
             if (!username) {
                 alert('Por favor, insira o seu nome.');
@@ -161,7 +169,6 @@
             localStorage.setItem('mccs_username', username);
             currentUser = username;
 
-            // Verifica se já tem uma sala na URL ou gera uma nova aleatória
             let hash = window.location.hash.replace('#', '');
             if (!hash) {
                 hash = generateRandomRoom();
@@ -169,6 +176,7 @@
             }
             currentRoom = hash;
 
+            initP2PRoom();
             enterRoomUI();
         }
 
@@ -183,28 +191,77 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
+            if (room) {
+                room.leave();
+            }
             window.location.hash = '';
             location.reload();
         }
 
         function copyRoomLink() {
             navigator.clipboard.writeText(window.location.href);
-            alert('Link da sala copiado para a área de transferência! Compartilhe com seus amigos.');
+            alert('Link da sala copiado! Mande para os seus amigos.');
         }
+
+        function initP2PRoom() {
+            const config = { appId: 'mccstela-app-v1-' + currentRoom };
+            room = window.trystero.joinRoom(config, currentRoom);
+
+            activeUsers[room.selfId] = { name: currentUser, isSelf: true };
+
+            room.onPeerJoin(peerId => {
+                console.log('Peer entrou:', peerId);
+                sendNameAction(currentUser);
+            });
+
+            room.onPeerLeave(peerId => {
+                console.log('Peer saiu:', peerId);
+                delete activeUsers[peerId];
+                removeVideoStream(peerId);
+                updateUsersList();
+            });
+
+            const [sendName, getNamestream] = room.makeAction('user-name');
+            sendNameAction = (name) => sendName(name);
+            getNamestream((name, peerId) => {
+                if (!activeUsers[peerId]) activeUsers[peerId] = {};
+                activeUsers[peerId].name = name;
+                updateUsersList();
+            });
+
+            const [sendStream, getStream] = room.makeAction('screen-stream');
+            sendVideoStream = sendStream;
+
+            getStream((stream, peerId) => {
+                const userName = activeUsers[peerId]?.name || 'Usuário';
+                addVideoStream(peerId, stream, userName, false);
+            });
+        }
+
+        let sendNameAction = () => {};
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            document.getElementById('sidebar-count').innerText = '1';
-            document.getElementById('user-count-badge').innerText = '1 online';
+            const userIds = Object.keys(activeUsers);
             
-            listEl.innerHTML = `
-                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition cursor-pointer">
-                    <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                        ${currentUser.charAt(0).toUpperCase()}
+            document.getElementById('sidebar-count').innerText = userIds.length;
+            document.getElementById('user-count-badge').innerText = `${userIds.length} online`;
+            
+            listEl.innerHTML = '';
+            userIds.forEach(id => {
+                const user = activeUsers[id];
+                const displayName = user.name || 'Convidado';
+                const isYou = user.isSelf ? ' (Você)' : '';
+
+                listEl.innerHTML += `
+                    <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
+                        <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                            ${displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <span class="text-sm font-medium text-white truncate">${displayName}${isYou}</span>
                     </div>
-                    <span class="text-sm font-medium text-white">${currentUser} (Você)</span>
-                </div>
-            `;
+                `;
+            });
         }
 
         function openSettings() {
@@ -240,7 +297,11 @@
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    addVideoStream(currentUser, localStream, true);
+                    if (sendVideoStream) {
+                        sendVideoStream(localStream);
+                    }
+
+                    addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
                     localStream.getVideoTracks()[0].onended = () => {
                         stopSharing();
@@ -266,17 +327,17 @@
             shareBtn.classList.add('bg-[#248046]', 'hover:bg-[#1a6335]');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
-            removeVideoStream(currentUser);
+            removeVideoStream('self');
         }
 
-        function addVideoStream(name, stream, isLocal = false) {
+        function addVideoStream(id, stream, name, isLocal = false) {
             document.getElementById('empty-state').classList.add('hidden');
             const grid = document.getElementById('video-grid');
 
-            removeVideoStream(name);
+            removeVideoStream(id);
 
             const container = document.createElement('div');
-            container.id = `video-container-${name}`;
+            container.id = `video-container-${id}`;
             container.className = 'relative bg-[#111214] rounded-xl overflow-hidden shadow-lg border border-[#232428] aspect-video flex items-center justify-center';
 
             const video = document.createElement('video');
@@ -295,8 +356,8 @@
             grid.appendChild(container);
         }
 
-        function removeVideoStream(name) {
-            const container = document.getElementById(`video-container-${name}`);
+        function removeVideoStream(id) {
+            const container = document.getElementById(`video-container-${id}`);
             if (container) {
                 container.remove();
             }
