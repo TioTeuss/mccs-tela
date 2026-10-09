@@ -8,8 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Trystero para WebRTC P2P (via Torrent Tracker público confiável) -->
-    <script src="https://cdn.jsdelivr.net/npm/trystero@0.19.0/torrent.min.js"></script>
+    <!-- Servidor Global MQTT para Sinalização WebRTC super estável -->
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -125,17 +125,18 @@
         </div>
     </div>
 
-    <!-- Script Trystero Global Torrent -->
+    <!-- WebRTC Master Script com MQTT via WSS -->
     <script>
         let currentUser = '';
         let currentRoom = '';
         let localStream = null;
         let isSharing = false;
         
-        let room = null;
-        let sendNameData = null;
-        let sendVideoStream = null;
-        let activeUsers = {};
+        // MQTT broker público estável (WebSockets sobre SSL)
+        const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
+        let mqttClient = null;
+        let myId = 'usr_' + Math.random().toString(36).substr(2, 9);
+        let peers = {}; // Guarda as conexões de vídeo com cada utilizador
 
         window.addEventListener('DOMContentLoaded', () => {
             const savedName = localStorage.getItem('mccs_username');
@@ -168,7 +169,7 @@
 
             const btn = document.getElementById('login-btn');
             btn.disabled = true;
-            document.getElementById('login-btn-text').innerText = 'Entrando...';
+            document.getElementById('login-btn-text').innerText = 'Conectando aos servidores...';
 
             localStorage.setItem('mccs_username', username);
             currentUser = username;
@@ -180,74 +181,195 @@
             }
             currentRoom = hash;
 
-            // Inicia o Trystero com o appId único + sala
-            initTrysteroRoom();
+            initSignaling();
         }
 
-        function initTrysteroRoom() {
-            try {
-                // Trystero via Torrent Trackers (funciona globalmente)
-                const config = { appId: 'mccs-tela-app-v2' };
-                room = window.trystero.joinRoom(config, currentRoom);
+        function initSignaling() {
+            // Conecta ao canal global
+            mqttClient = mqtt.connect(brokerUrl);
 
-                activeUsers[room.selfId] = { name: currentUser, isSelf: true };
+            mqttClient.on('connect', () => {
+                console.log('Sinalização Online!');
+                const baseTopic = `mccstela/${currentRoom}`;
+                
+                // Subscreve à sala
+                mqttClient.subscribe(`${baseTopic}/#`);
 
-                room.onPeerJoin(peerId => {
-                    console.log('Alguém entrou na sala:', peerId);
-                    // Avisa o novo peer sobre o meu nome
-                    if (sendNameData) sendNameData(currentUser, peerId);
-                    // Se eu estiver transmitindo, manda o vídeo pra ele
-                    if (isSharing && localStream && sendVideoStream) {
-                        sendVideoStream(localStream, peerId);
-                    }
+                // Avisa todos que entramos
+                mqttClient.publish(`${baseTopic}/join`, JSON.stringify({ id: myId, name: currentUser }));
+
+                // Prepara o adeus caso a aba seja fechada
+                window.addEventListener('beforeunload', () => {
+                    mqttClient.publish(`${baseTopic}/leave`, JSON.stringify({ id: myId }));
                 });
 
-                room.onPeerLeave(peerId => {
-                    console.log('Alguém saiu da sala:', peerId);
-                    delete activeUsers[peerId];
-                    removeVideoStream(peerId);
-                    updateUsersList();
-                });
+                enterRoomUI();
+            });
 
-                // Ação para trocar nomes de usuário
-                const [sendName, getNamestream] = room.makeAction('user-name');
-                sendNameData = sendName;
-                getNamestream((name, peerId) => {
-                    if (!activeUsers[peerId]) activeUsers[peerId] = {};
-                    activeUsers[peerId].name = name;
-                    updateUsersList();
-                    // Quando eu recebo o nome de alguém novo, mando o meu de volta pra ele me conhecer
-                    sendNameData(currentUser, peerId);
-                });
-
-                // Ação para receber vídeo da tela
-                const [sendStream, getStream] = room.makeAction('screen-stream');
-                sendVideoStream = sendStream;
-
-                getStream((stream, peerId) => {
-                    const userName = activeUsers[peerId]?.name || 'Usuário';
-                    addVideoStream(peerId, stream, userName, false);
-                });
-
-                // Libera a interface
-                document.getElementById('room-title-display').innerText = currentRoom;
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('room-screen').classList.remove('hidden');
-                updateUsersList();
-
-            } catch (err) {
-                console.error("Erro no Trystero:", err);
-                alert("Falha ao conectar na rede P2P. Verifique sua conexão.");
+            mqttClient.on('error', (err) => {
+                console.error("Erro no MQTT:", err);
+                alert("Rede bloqueada. Tente usar outra internet ou desligar o Adblock.");
                 location.reload();
+            });
+
+            mqttClient.on('message', (topic, message) => {
+                const msg = JSON.parse(message.toString());
+                const baseTopic = `mccstela/${currentRoom}`;
+
+                // 1. Alguém novo entrou na sala
+                if (topic === `${baseTopic}/join` && msg.id !== myId) {
+                    console.log('Novo usuário:', msg.name);
+                    createPeer(msg.id, msg.name, true);
+                    
+                    // Respondemos para ele saber que já estamos aqui
+                    mqttClient.publish(`${baseTopic}/here`, JSON.stringify({ 
+                        id: myId, name: currentUser, target: msg.id 
+                    }));
+                }
+
+                // 2. Recebemos resposta de alguém que já estava na sala
+                if (topic === `${baseTopic}/here` && msg.target === myId) {
+                    console.log('Usuário já estava na sala:', msg.name);
+                    createPeer(msg.id, msg.name, false);
+                }
+
+                // 3. Comunicação direta WebRTC
+                if (topic === `${baseTopic}/signal/${myId}`) {
+                    handleSignal(msg.from, msg.name, msg.signal);
+                }
+
+                // 4. Alguém saiu
+                if (topic === `${baseTopic}/leave` && msg.id !== myId) {
+                    removePeer(msg.id);
+                }
+            });
+        }
+
+        function createPeer(peerId, peerName, isInitiator) {
+            if (peers[peerId]) return peers[peerId];
+
+            const pc = new RTCPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
+            });
+
+            peers[peerId] = { pc, name: peerName, senders: [] };
+
+            // Se eu já estiver compartilhando a tela, injeta no novo amigo
+            if (isSharing && localStream) {
+                localStream.getTracks().forEach(track => {
+                    const sender = pc.addTrack(track, localStream);
+                    peers[peerId].senders.push(sender);
+                });
             }
+
+            // Descobre caminhos de rede
+            pc.onicecandidate = (e) => {
+                if (e.candidate) {
+                    sendSignal(peerId, { type: 'candidate', candidate: e.candidate });
+                }
+            };
+
+            // Recebe o vídeo do amigo
+            pc.ontrack = (e) => {
+                if (e.streams && e.streams[0]) {
+                    addVideoStream(peerId, e.streams[0], peerName, false);
+                }
+            };
+
+            // Trata falhas de conexão
+            pc.oniceconnectionstatechange = () => {
+                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                    removePeer(peerId);
+                }
+            };
+
+            // Faz a negociação automática sempre que as faixas de vídeo mudam
+            let isNegotiating = false;
+            pc.onnegotiationneeded = async () => {
+                if (isNegotiating) return;
+                isNegotiating = true;
+                try {
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    sendSignal(peerId, offer);
+                } catch (err) {
+                    console.error("Erro na negociação:", err);
+                } finally {
+                    isNegotiating = false;
+                }
+            };
+
+            pc.onsignalingstatechange = () => {
+                isNegotiating = (pc.signalingState !== "stable");
+            };
+
+            // Se eu criei a conexão (novo visitante), eu forço um canal de dados para iniciar
+            if (isInitiator) {
+                pc.createDataChannel('mccs-init-channel');
+            }
+
+            updateUsersList();
+            return peers[peerId];
+        }
+
+        function sendSignal(targetId, signal) {
+            mqttClient.publish(`mccstela/${currentRoom}/signal/${targetId}`, JSON.stringify({
+                from: myId,
+                name: currentUser,
+                signal: signal
+            }));
+        }
+
+        async function handleSignal(fromId, name, signal) {
+            let peer = peers[fromId];
+            if (!peer) {
+                peer = createPeer(fromId, name, false);
+            }
+
+            const pc = peer.pc;
+
+            try {
+                if (signal.type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendSignal(fromId, answer);
+                } else if (signal.type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(signal));
+                } else if (signal.type === 'candidate') {
+                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                }
+            } catch (err) {
+                console.error('Erro ao processar o sinal WebRTC:', err);
+            }
+        }
+
+        function removePeer(id) {
+            if (peers[id]) {
+                peers[id].pc.close();
+                delete peers[id];
+            }
+            removeVideoStream(id);
+            updateUsersList();
+        }
+
+        function enterRoomUI() {
+            document.getElementById('room-title-display').innerText = currentRoom;
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('room-screen').classList.remove('hidden');
+            updateUsersList();
         }
 
         function leaveRoom() {
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (room) {
-                room.leave();
+            if (mqttClient) {
+                mqttClient.publish(`mccstela/${currentRoom}/leave`, JSON.stringify({ id: myId }));
+                mqttClient.end();
             }
             window.location.hash = '';
             location.reload();
@@ -260,26 +382,34 @@
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const userIds = Object.keys(activeUsers);
-            
-            document.getElementById('sidebar-count').innerText = userIds.length;
-            document.getElementById('user-count-badge').innerText = `${userIds.length} online`;
-            
-            listEl.innerHTML = '';
-            userIds.forEach(id => {
-                const user = activeUsers[id];
-                const displayName = user.name || 'Convidado';
-                const isYou = user.isSelf ? ' (Você)' : '';
+            const ids = Object.keys(peers);
+            const total = ids.length + 1; // +1 Você
 
-                listEl.innerHTML += `
+            document.getElementById('sidebar-count').innerText = total;
+            document.getElementById('user-count-badge').innerText = `${total} online`;
+            
+            let html = `
+                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
+                    <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
+                        ${currentUser.charAt(0).toUpperCase()}
+                    </div>
+                    <span class="text-sm font-medium text-white truncate">${currentUser} (Você)</span>
+                </div>
+            `;
+
+            ids.forEach(id => {
+                const name = peers[id].name || 'Convidado';
+                html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#35373c] transition">
                         <div class="w-8 h-8 rounded-full bg-[#5865F2] flex items-center justify-center font-bold text-white text-sm">
-                            ${displayName.charAt(0).toUpperCase()}
+                            ${name.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-medium text-white truncate">${displayName}${isYou}</span>
+                        <span class="text-sm font-medium text-white truncate">${name}</span>
                     </div>
                 `;
             });
+
+            listEl.innerHTML = html;
         }
 
         function openSettings() {
@@ -315,9 +445,13 @@
                     shareBtn.classList.add('bg-[#da373c]', 'hover:bg-[#a1282c]');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    if (sendVideoStream) {
-                        sendVideoStream(localStream);
-                    }
+                    // Envia a tela para todos que já estão conectados
+                    Object.values(peers).forEach(peer => {
+                        localStream.getTracks().forEach(track => {
+                            const sender = peer.pc.addTrack(track, localStream);
+                            peer.senders.push(sender);
+                        });
+                    });
 
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
@@ -345,15 +479,15 @@
             shareBtn.classList.add('bg-[#248046]', 'hover:bg-[#1a6335]');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
+            // Remove o stream das conexões existentes
+            Object.values(peers).forEach(peer => {
+                peer.senders.forEach(sender => {
+                    try { peer.pc.removeTrack(sender); } catch(e) {}
+                });
+                peer.senders = [];
+            });
+
             removeVideoStream('self');
-            
-            // Avisa a sala que eu parei removendo o stream via Trystero
-            // Como Trystero não tem um "unshare" nativo, criamos uma aba morta
-            if (sendVideoStream) {
-                // Envia null ou array vazio pra limpar o track nos peers
-                const emptyStream = new MediaStream();
-                sendVideoStream(emptyStream);
-            }
         }
 
         function addVideoStream(id, stream, name, isLocal = false) {
@@ -362,10 +496,8 @@
 
             removeVideoStream(id);
 
-            // Verifica se a stream enviada é válida e tem tracks
-            if (!stream || stream.getTracks().length === 0) {
-                return; 
-            }
+            // Não desenha streams vazios
+            if (!stream || stream.getTracks().length === 0) return;
 
             const container = document.createElement('div');
             container.id = `video-container-${id}`;
