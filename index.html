@@ -6,7 +6,7 @@
     <title>MCCS Tela 🦍</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -119,10 +119,9 @@
         let localStream = null;
         let isSharing = false;
         
-        const brokerUrl = 'wss://broker.emqx.io:8084/mqtt';
-        let mqttClient = null;
-        let myId = 'usr_' + Math.random().toString(36).substr(2, 9);
-        let peers = {}; 
+        let peer = null;
+        let activePeers = {}; 
+        let connectedUsers = {};
 
         const monkeyNames = ['Babuíno', 'Gorila', 'Chimpanzé', 'Orangotango', 'Macaco Prego', 'Sagui', 'Bugio', 'Macaco-aranha', 'Mico-leão', 'Mandril'];
 
@@ -172,147 +171,75 @@
             }
             currentRoom = hash;
 
-            initSignaling();
+            initPeerJS();
         }
 
-        function initSignaling() {
-            mqttClient = mqtt.connect(brokerUrl);
+        function initPeerJS() {
+            peer = new Peer(null, {
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
 
-            mqttClient.on('connect', () => {
-                const baseTopic = `mccstela/${currentRoom}`;
-                mqttClient.subscribe(`${baseTopic}/#`);
-                mqttClient.publish(`${baseTopic}/join`, JSON.stringify({ id: myId, name: currentUser }));
-
-                window.addEventListener('beforeunload', () => {
-                    mqttClient.publish(`${baseTopic}/leave`, JSON.stringify({ id: myId }));
-                });
-
+            peer.on('open', (id) => {
                 enterRoomUI();
+                connectRoomChannel();
             });
 
-            mqttClient.on('error', (err) => {
-                alert("Rede bloqueada. Tente usar outra internet.");
-                location.reload();
-            });
-
-            mqttClient.on('message', (topic, message) => {
-                const msg = JSON.parse(message.toString());
-                const baseTopic = `mccstela/${currentRoom}`;
-
-                if (topic === `${baseTopic}/join` && msg.id !== myId) {
-                    createPeer(msg.id, msg.name, true);
-                    mqttClient.publish(`${baseTopic}/here`, JSON.stringify({ id: myId, name: currentUser, target: msg.id }));
-                }
-
-                if (topic === `${baseTopic}/here` && msg.target === myId) {
-                    createPeer(msg.id, msg.name, false);
-                }
-
-                if (topic === `${baseTopic}/signal/${myId}`) {
-                    handleSignal(msg.from, msg.name, msg.signal);
-                }
-
-                if (topic === `${baseTopic}/leave` && msg.id !== myId) {
-                    removePeer(msg.id);
-                }
-            });
-        }
-
-        function createPeer(peerId, peerName, isInitiator) {
-            if (peers[peerId]) return peers[peerId];
-
-            const pc = new RTCPeerConnection({
-                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }]
-            });
-
-            peers[peerId] = { pc, name: peerName, senders: [] };
-
-            if (isSharing && localStream) {
-                localStream.getTracks().forEach(track => {
-                    const sender = pc.addTrack(track, localStream);
-                    peers[peerId].senders.push(sender);
+            peer.on('call', (call) => {
+                call.answer(localStream || undefined);
+                call.on('stream', (remoteStream) => {
+                    const peerName = connectedUsers[call.peer] || 'Macaco';
+                    addVideoStream(call.peer, remoteStream, peerName, false);
                 });
-            }
+            });
 
-            pc.onicecandidate = (e) => {
-                if (e.candidate) {
-                    sendSignal(peerId, { type: 'candidate', candidate: e.candidate });
-                }
-            };
+            peer.on('connection', (conn) => {
+                conn.on('data', (data) => {
+                    if (data.type === 'USER_JOIN') {
+                        connectedUsers[conn.peer] = data.name;
+                        updateUsersList();
+                    }
+                });
+            });
 
-            pc.ontrack = (e) => {
-                if (e.streams && e.streams[0]) {
-                    addVideoStream(peerId, e.streams[0], peerName, false);
-                }
-            };
-
-            pc.oniceconnectionstatechange = () => {
-                if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                    removePeer(peerId);
-                }
-            };
-
-            let isNegotiating = false;
-            pc.onnegotiationneeded = async () => {
-                if (isNegotiating) return;
-                isNegotiating = true;
-                try {
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
-                    sendSignal(peerId, offer);
-                } catch (err) {} finally {
-                    isNegotiating = false;
-                }
-            };
-
-            pc.onsignalingstatechange = () => {
-                isNegotiating = (pc.signalingState !== "stable");
-            };
-
-            if (isInitiator) {
-                pc.createDataChannel('mccs-init-channel');
-            }
-
-            updateUsersList();
-            return peers[peerId];
+            peer.on('error', (err) => {
+                console.error('Erro PeerJS:', err);
+            });
         }
 
-        function sendSignal(targetId, signal) {
-            mqttClient.publish(`mccstela/${currentRoom}/signal/${targetId}`, JSON.stringify({
-                from: myId,
-                name: currentUser,
-                signal: signal
-            }));
-        }
+        function connectRoomChannel() {
+            const channel = new BroadcastChannel('mccs_room_channel_' + currentRoom);
+            
+            channel.postMessage({ type: 'ANNOUNCE', peerId: peer.id, name: currentUser });
 
-        async function handleSignal(fromId, name, signal) {
-            let peer = peers[fromId];
-            if (!peer) {
-                peer = createPeer(fromId, name, false);
-            }
+            channel.onmessage = (e) => {
+                const data = e.data;
+                if (data.type === 'ANNOUNCE' && data.peerId !== peer.id) {
+                    connectedUsers[data.peerId] = data.name;
+                    updateUsersList();
+                    
+                    const conn = peer.connect(data.peerId);
+                    conn.on('open', () => {
+                        conn.send({ type: 'USER_JOIN', name: currentUser });
+                    });
 
-            const pc = peer.pc;
-            try {
-                if (signal.type === 'offer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(signal));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    sendSignal(fromId, answer);
-                } else if (signal.type === 'answer') {
-                    await pc.setRemoteDescription(new RTCSessionDescription(signal));
-                } else if (signal.type === 'candidate') {
-                    await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+                    if (isSharing && localStream) {
+                        const call = peer.call(data.peerId, localStream);
+                        activePeers[data.peerId] = call;
+                    }
+
+                    channel.postMessage({ type: 'REPLY', peerId: peer.id, name: currentUser, target: data.peerId });
                 }
-            } catch (err) {}
-        }
 
-        function removePeer(id) {
-            if (peers[id]) {
-                peers[id].pc.close();
-                delete peers[id];
-            }
-            removeVideoStream(id);
-            updateUsersList();
+                if (data.type === 'REPLY' && data.target === peer.id) {
+                    connectedUsers[data.peerId] = data.name;
+                    updateUsersList();
+                }
+            };
         }
 
         function enterRoomUI() {
@@ -326,9 +253,8 @@
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (mqttClient) {
-                mqttClient.publish(`mccstela/${currentRoom}/leave`, JSON.stringify({ id: myId }));
-                mqttClient.end();
+            if (peer) {
+                peer.destroy();
             }
             window.location.hash = '';
             location.reload();
@@ -341,7 +267,7 @@
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const ids = Object.keys(peers);
+            const ids = Object.keys(connectedUsers);
             const total = ids.length + 1; 
 
             document.getElementById('sidebar-count').innerText = total;
@@ -357,7 +283,7 @@
             `;
 
             ids.forEach(id => {
-                const name = peers[id].name || 'Macaco';
+                const name = connectedUsers[id] || 'Macaco';
                 html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#111] transition border border-transparent hover:border-red-900/30">
                         <div class="w-8 h-8 rounded-full bg-[#222] border border-red-900 flex items-center justify-center font-bold text-red-500 text-sm">
@@ -408,9 +334,9 @@
             video.muted = !video.muted;
             
             if (video.muted) {
-                icon.className = 'fa-solid fa-volume-xmark text-red-500';
+                icon.className = 'fa-solid fa-volume-xmark text-red-500 text-lg';
             } else {
-                icon.className = 'fa-solid fa-volume-high text-white';
+                icon.className = 'fa-solid fa-volume-high text-white text-lg';
             }
         }
 
@@ -439,11 +365,9 @@
                     shareBtn.classList.add('bg-[#111]', 'hover:bg-red-900', 'border', 'border-red-600');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    Object.values(peers).forEach(peer => {
-                        localStream.getTracks().forEach(track => {
-                            const sender = peer.pc.addTrack(track, localStream);
-                            peer.senders.push(sender);
-                        });
+                    Object.keys(connectedUsers).forEach(peerId => {
+                        const call = peer.call(peerId, localStream);
+                        activePeers[peerId] = call;
                     });
 
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
@@ -470,12 +394,10 @@
             shareBtn.classList.add('bg-red-600', 'hover:bg-red-700');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
 
-            Object.values(peers).forEach(peer => {
-                peer.senders.forEach(sender => {
-                    try { peer.pc.removeTrack(sender); } catch(e) {}
-                });
-                peer.senders = [];
+            Object.values(activePeers).forEach(call => {
+                if (call && call.close) call.close();
             });
+            activePeers = {};
 
             removeVideoStream('self');
         }
