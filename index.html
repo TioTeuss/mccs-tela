@@ -6,7 +6,7 @@
     <title>MCCS Tela 🦍</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/trystero@0.19.0/torrent.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -119,12 +119,9 @@
         let localStream = null;
         let isSharing = false;
         
-        let room = null;
-        let sendName = null;
-        let getName = null;
-        let sendStream = null;
-        let getStream = null;
-        let activeUsers = {};
+        let peer = null;
+        let activeCalls = {}; 
+        let connectedUsers = {};
 
         const monkeyNames = ['Babuíno', 'Gorila', 'Chimpanzé', 'Orangotango', 'Macaco Prego', 'Sagui', 'Bugio', 'Macaco-aranha', 'Mico-leão', 'Mandril'];
 
@@ -160,10 +157,6 @@
                 return;
             }
 
-            const btn = document.getElementById('login-btn');
-            btn.disabled = true;
-            document.getElementById('login-btn-text').innerText = 'Conectando...';
-
             localStorage.setItem('mccs_primata_name', username);
             currentUser = username;
 
@@ -174,41 +167,8 @@
             }
             currentRoom = hash;
 
-            initTrystero();
-        }
-
-        function initTrystero() {
-            room = window.trystero.joinRoom({ appId: 'mccs-tela-global-v3' }, currentRoom);
-
-            activeUsers[room.selfId] = currentUser;
-
-            [sendName, getName] = room.makeAction('user_name');
-            [sendStream, getStream] = room.makeAction('screen_stream');
-
-            getName((name, peerId) => {
-                activeUsers[peerId] = name;
-                updateUsersList();
-            });
-
-            getStream((stream, peerId) => {
-                const name = activeUsers[peerId] || 'Macaco';
-                addVideoStream(peerId, stream, name, false);
-            });
-
-            room.onPeerJoin((peerId) => {
-                sendName(currentUser, peerId);
-                if (isSharing && localStream) {
-                    sendStream(localStream, peerId);
-                }
-            });
-
-            room.onPeerLeave((peerId) => {
-                delete activeUsers[peerId];
-                removeVideoStream(peerId);
-                updateUsersList();
-            });
-
             enterRoomUI();
+            initPeerJS();
         }
 
         function enterRoomUI() {
@@ -218,12 +178,84 @@
             updateUsersList();
         }
 
+        function initPeerJS() {
+            peer = new Peer(null, {
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
+
+            peer.on('open', (id) => {
+                connectRoomSignaling();
+            });
+
+            peer.on('call', (call) => {
+                call.answer(localStream || undefined);
+                call.on('stream', (remoteStream) => {
+                    const peerName = connectedUsers[call.peer] || 'Macaco';
+                    addVideoStream(call.peer, remoteStream, peerName, false);
+                });
+            });
+
+            peer.on('connection', (conn) => {
+                conn.on('data', (data) => {
+                    if (data.type === 'USER_INFO') {
+                        connectedUsers[conn.peer] = data.name;
+                        updateUsersList();
+                    }
+                });
+            });
+        }
+
+        function connectRoomSignaling() {
+            const bc = new BroadcastChannel('mccs_p2p_channel_' + currentRoom);
+            bc.postMessage({ type: 'JOIN', peerId: peer.id, name: currentUser });
+
+            bc.onmessage = (e) => {
+                const data = e.data;
+                if (data.type === 'JOIN' && data.peerId !== peer.id) {
+                    connectedUsers[data.peerId] = data.name;
+                    updateUsersList();
+
+                    const conn = peer.connect(data.peerId);
+                    conn.on('open', () => {
+                        conn.send({ type: 'USER_INFO', name: currentUser });
+                    });
+
+                    if (isSharing && localStream) {
+                        const call = peer.call(data.peerId, localStream);
+                        activeCalls[data.peerId] = call;
+                    }
+
+                    bc.postMessage({ type: 'WELCOME', peerId: peer.id, name: currentUser, target: data.peerId });
+                }
+
+                if (data.type === 'WELCOME' && data.target === peer.id) {
+                    connectedUsers[data.peerId] = data.name;
+                    updateUsersList();
+                }
+
+                if (data.type === 'LEAVE') {
+                    delete connectedUsers[data.peerId];
+                    removeVideoStream(data.peerId);
+                    updateUsersList();
+                }
+            };
+
+            window.addEventListener('beforeunload', () => {
+                bc.postMessage({ type: 'LEAVE', peerId: peer.id });
+            });
+        }
+
         function leaveRoom() {
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
-            if (room) {
-                room.leave();
+            if (peer) {
+                peer.destroy();
             }
             window.location.hash = '';
             location.reload();
@@ -236,22 +268,29 @@
 
         function updateUsersList() {
             const listEl = document.getElementById('users-list');
-            const ids = Object.keys(activeUsers);
-            const total = ids.length;
+            const ids = Object.keys(connectedUsers);
+            const total = ids.length + 1; 
 
             document.getElementById('sidebar-count').innerText = total;
             document.getElementById('user-count-badge').innerText = `${total} primata(s) online`;
             
-            let html = '';
+            let html = `
+                <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#111] transition border border-transparent hover:border-red-900/30">
+                    <div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-white text-sm shadow-lg">
+                        ${currentUser.charAt(0).toUpperCase()}
+                    </div>
+                    <span class="text-sm font-bold text-white truncate">${currentUser} (Você)</span>
+                </div>
+            `;
+
             ids.forEach(id => {
-                const name = activeUsers[id] || 'Macaco';
-                const isYou = id === room.selfId ? ' (Você)' : '';
+                const name = connectedUsers[id] || 'Macaco';
                 html += `
                     <div class="flex items-center space-x-2 px-2 py-1.5 rounded hover:bg-[#111] transition border border-transparent hover:border-red-900/30">
-                        <div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center font-bold text-white text-sm shadow-lg">
+                        <div class="w-8 h-8 rounded-full bg-[#222] border border-red-900 flex items-center justify-center font-bold text-red-500 text-sm">
                             ${name.charAt(0).toUpperCase()}
                         </div>
-                        <span class="text-sm font-bold text-white truncate">${name}${isYou}</span>
+                        <span class="text-sm font-medium text-gray-300 truncate">${name}</span>
                     </div>
                 `;
             });
@@ -327,7 +366,11 @@
                     shareBtn.classList.add('bg-[#111]', 'hover:bg-red-900', 'border', 'border-red-600');
                     shareBtnText.innerText = 'Parar Transmissão';
 
-                    sendStream(localStream);
+                    Object.keys(connectedUsers).forEach(peerId => {
+                        const call = peer.call(peerId, localStream);
+                        activeCalls[peerId] = call;
+                    });
+
                     addVideoStream('self', localStream, currentUser + ' (Você)', true);
 
                     localStream.getVideoTracks()[0].onended = () => {
@@ -351,6 +394,11 @@
             shareBtn.classList.remove('bg-[#111]', 'hover:bg-red-900', 'border', 'border-red-600');
             shareBtn.classList.add('bg-red-600', 'hover:bg-red-700');
             document.getElementById('share-btn-text').innerText = 'Transmitir Tela';
+
+            Object.values(activeCalls).forEach(call => {
+                if (call && call.close) call.close();
+            });
+            activeCalls = {};
 
             removeVideoStream('self');
         }
